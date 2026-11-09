@@ -81,7 +81,7 @@ checked by building them on the meta device (exact shapes, no memory).
    sentencepiece 0.2.3's Unigram trainer stops with `unigram_model_trainer.cc(828)
    [normalizer_spec_.escape_whitespaces()]`. Fix (owner asked for 100% round trip): normalization is
    identity plus two escape rules stored inside the .model file. A real U+2581 becomes U+E000 "0" and a
-   real U+E000 becomes U+E000 "1"; decoding reverses both, like `\` in strings. No other character is
+   real U+E000 becomes U+E000 "1"; decoding reverses both, like an escaped backslash `\\` in strings. No other character is
    changed (no NFKC). Cost: a real `▁` takes 4 tokens (3 bytes of U+E000 plus "0"); it is rare.
    Caveat for later: llama.cpp ignores SentencePiece normalization rules, so an app on llama.cpp must
    apply the same two-rule escape itself (training data and the Python codec are exact).
