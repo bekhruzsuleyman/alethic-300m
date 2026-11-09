@@ -8,6 +8,8 @@ Run from the repo root (each call spends credits, so the owner approves first):
     modal run deploy/modal_app.py::tests                       # all tests on Linux CPU, about $0.01
     modal run deploy/modal_app.py::probe                       # checks Volume rename/fsync/commit, < $0.01
     modal run deploy/modal_app.py::train --model sgca --max-cost 5 --stop-step 2000
+    modal run deploy/modal_app.py::tokenizer_sample --streams fineweb_edu,math,uzbek_latn,uzbek_cyrl
+    modal run deploy/modal_app.py::tokenizer_train
 
 Prices used for the cost guard (modal.com/pricing, 2026-11-09):
     H100 $0.001097/s = $3.949/h; CPU $0.0000131/core/s = $0.0472/h per physical core (2 vCPU);
@@ -36,6 +38,17 @@ hf_secret = modal.Secret.from_name("huggingface", required_keys=["HF_TOKEN"])
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install_from_requirements(str(REPO / "requirements.txt"))
+    .env({"ALETHIC_DATA_DIR": DATA, "PYTHONPATH": f"{REMOTE}/src", "PYTHONUNBUFFERED": "1"})
+    .workdir(REMOTE)
+    .add_local_dir(str(REPO), REMOTE, ignore=[".venv", ".git", "**/__pycache__", "**/.pytest_cache", "*.egg-info"])
+)
+
+# Data and tokenizer work needs no torch: a smaller image that builds and starts faster.
+CPU_PACKAGES = [line.strip() for line in (REPO / "requirements.txt").read_text().splitlines()
+                if line.strip() and not line.startswith("#") and not line.startswith("torch")]
+cpu_image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .pip_install(*CPU_PACKAGES)
     .env({"ALETHIC_DATA_DIR": DATA, "PYTHONPATH": f"{REMOTE}/src", "PYTHONUNBUFFERED": "1"})
     .workdir(REMOTE)
     .add_local_dir(str(REPO), REMOTE, ignore=[".venv", ".git", "**/__pycache__", "**/.pytest_cache", "*.egg-info"])
@@ -108,6 +121,43 @@ def train_remote(model: str, max_cost: float | None, stop_step: int | None, run_
         return cli.main(args)
     finally:
         volume.commit()
+
+
+@app.function(image=cpu_image, cpu=2, memory=16384, timeout=4 * 3600, volumes={DATA: volume},
+              secrets=[hf_secret])
+def tok_sample(streams: str) -> int:
+    """M1 step 1 on a cheap container: download and build some sample streams.
+    2 cores + 16 GiB = 2 x 0.0472 + 16 x 0.0080 = $0.22/h."""
+    from alethic import cli
+    try:
+        return cli.main(["tokenizer-build", "--stage", "sample", "--streams", streams])
+    finally:
+        volume.commit()
+
+
+@app.function(image=cpu_image, cpu=16, memory=131072, timeout=6 * 3600, volumes={DATA: volume},
+              secrets=[hf_secret])
+def tok_train() -> int:
+    """M1 steps 2-4: merge the sample, train SentencePiece on 32 threads, evaluate, freeze.
+    16 physical cores (32 vCPU) + 128 GiB = 16 x 0.0472 + 128 x 0.0080 = $1.78/h."""
+    from alethic import cli
+    volume.reload()
+    try:
+        return cli.main(["tokenizer-build", "--stage", "all", "--threads", "32"])
+    finally:
+        volume.commit()
+
+
+@app.local_entrypoint()
+def tokenizer_sample(streams: str = "fineweb_edu,math,uzbek_latn,uzbek_cyrl") -> None:
+    """modal run deploy/modal_app.py::tokenizer_sample --streams fineweb_edu,math"""
+    print("exit code", tok_sample.remote(streams))
+
+
+@app.local_entrypoint()
+def tokenizer_train() -> None:
+    """modal run deploy/modal_app.py::tokenizer_train   (after every stream is built)"""
+    print("exit code", tok_train.remote())
 
 
 @app.local_entrypoint()

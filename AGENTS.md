@@ -113,7 +113,7 @@ under `$ALETHIC_DATA_DIR`; paths in the configs are relative to it.
   the codec refuses a model without the escape.
 - **Whitespace `user_defined_symbols` must be written with `▁`, not spaces.** Space versions are
   accepted but never match; `train.py` refuses them.
-- **Writing `▁`, ``, `\t` through shell heredocs** can turn the escapes into raw characters
+- **Writing `\u2581`, `\ue000`, `\t` escapes through shell heredocs or sed** can turn the escapes into raw characters
   or real tabs and newlines. Edit those lines with an exact-match file edit and check the bytes afterwards.
 - **The laptop** runs Windows with 3.65 GB RAM (often under 0.5 GB free). Don't build the full 302M model
   there; use `torch.device("meta")` for shape and count checks. Use the venv at `.venv`

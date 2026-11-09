@@ -17,9 +17,19 @@ CONFIGS = REPO / "configs"
 def _not_built(milestone: str):
     """Return a handler for a command that a later milestone implements."""
     def handler(_args: argparse.Namespace) -> int:
-        print(f"This command is built in milestone {milestone}; M0 provides only `train`.", file=sys.stderr)
+        print(f"This command is built in milestone {milestone}.", file=sys.stderr)
         return 2
     return handler
+
+
+def cmd_tokenizer_build(args: argparse.Namespace) -> int:
+    """Run the tokenizer pipeline (M1): sample, train, eval, freeze."""
+    from alethic.tokenizer import build
+
+    only = [s.strip() for s in args.streams.split(",")] if args.streams else None
+    specials = load_config(args.train)["paths"]["specials"]
+    return build.run(load_config(args.tokenizer), load_config(args.data), Path(args.tokenizer),
+                     specials, args.stage, args.size_bytes, only, args.threads)
 
 
 def cmd_train(args: argparse.Namespace) -> int:
@@ -58,7 +68,16 @@ def build_parser() -> argparse.ArgumentParser:
     """Define every command and its options."""
     parser = argparse.ArgumentParser(prog="python -m alethic")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("tokenizer-build", help="sample, train, evaluate, freeze (M1)").set_defaults(func=_not_built("M1"))
+    tb = sub.add_parser("tokenizer-build", help="sample, train, evaluate, freeze (M1)")
+    tb.add_argument("--stage", default="all", choices=["all", "sample", "train", "eval", "freeze"])
+    tb.add_argument("--streams", default=None, help="comma list of sample streams to build now, "
+                    "e.g. fineweb_edu,math,uzbek_latn,uzbek_cyrl")
+    tb.add_argument("--size-bytes", type=int, default=None, help="override sample.size_bytes")
+    tb.add_argument("--threads", type=int, default=None, help="override sentencepiece num_threads")
+    tb.add_argument("--tokenizer", default=str(CONFIGS / "tokenizer.yaml"))
+    tb.add_argument("--data", default=str(CONFIGS / "data.yaml"))
+    tb.add_argument("--train", default=str(CONFIGS / "train.yaml"))
+    tb.set_defaults(func=cmd_tokenizer_build)
     sub.add_parser("data-fetch", help="pin and download sources (M2)").set_defaults(func=_not_built("M2"))
     sub.add_parser("data-build", help="dedup, decontaminate, encode, shard (M2)").set_defaults(func=_not_built("M2"))
     sub.add_parser("eval", help="validation bits per byte (M2/M4)").set_defaults(func=_not_built("M2/M4"))

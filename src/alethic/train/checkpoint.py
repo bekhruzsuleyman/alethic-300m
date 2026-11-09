@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import threading
 from pathlib import Path
 
 import torch
@@ -69,6 +70,55 @@ def save_checkpoint(ckpt_root: Path, step: int, state: dict, specials_path: Path
     os.replace(tmp, final)
     prune(root, keep_last, keep_every)
     return final
+
+
+def to_cpu(obj):
+    """Deep-copy every tensor in a nested dict/list to CPU memory (the only part that blocks training)."""
+    if isinstance(obj, torch.Tensor):
+        return obj.detach().to("cpu", copy=True)
+    if isinstance(obj, dict):
+        return {k: to_cpu(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return type(obj)(to_cpu(v) for v in obj)
+    return obj
+
+
+class AsyncSaver:
+    """Writes checkpoints in a background thread so the GPU keeps training.
+
+    save() snapshots the state to CPU (about 1 s for 3.6 GB), then serialisation, SHA-256, the atomic
+    rename and pruning run in the thread. Only one save runs at a time; a new save first waits for
+    the previous one. wait() must be called before exit.
+    """
+
+    def __init__(self) -> None:
+        """No save running yet."""
+        self._thread: threading.Thread | None = None
+        self._error: BaseException | None = None
+        self.last: Path | None = None
+
+    def save(self, *args, blocking: bool = False, **kwargs) -> None:
+        """Start save_checkpoint(*args, **kwargs) in the background (state must already be on CPU)."""
+        self.wait()
+        def run() -> None:
+            try:
+                self.last = save_checkpoint(*args, **kwargs)
+            except BaseException as err:   # re-raised in the training thread by wait()
+                self._error = err
+        self._thread = threading.Thread(target=run, name="checkpoint", daemon=False)
+        self._thread.start()
+        if blocking:
+            self.wait()
+
+    def wait(self) -> Path | None:
+        """Block until the running save is finished; raise its error if it failed."""
+        if self._thread is not None:
+            self._thread.join()
+            self._thread = None
+        if self._error is not None:
+            err, self._error = self._error, None
+            raise CheckpointError(f"checkpoint save failed: {err}") from err
+        return self.last
 
 
 def load_checkpoint(folder: Path) -> tuple[dict, dict]:

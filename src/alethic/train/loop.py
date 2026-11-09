@@ -182,17 +182,20 @@ def train(spec: RunSpec) -> dict:
     log_every = int(tc["log_every"])
     wall = base_wall
 
-    def save(at_step: int) -> Path:
-        """Write a checkpoint for the state after `at_step` steps."""
-        state = {"model": model.state_dict(), "optimizer": opt.state_dict(), "step": at_step,
-                 "tokens_seen": tokens_seen, "wall_seconds": wall, "rng": rng_state()}
+    saver = ckpt.AsyncSaver()
+
+    def save(at_step: int, blocking: bool = False) -> Path:
+        """Snapshot the state after `at_step` steps to CPU, then write it in the background."""
+        state = ckpt.to_cpu({"model": model.state_dict(), "optimizer": opt.state_dict(), "step": at_step,
+                             "tokens_seen": tokens_seen, "wall_seconds": wall, "rng": rng_state()})
         c = tc["checkpoint"]
-        return ckpt.save_checkpoint(ckpt_root, at_step, state, spec.specials_path, info,
-                                    int(c["keep_last"]), int(c["keep_every"]))
+        saver.save(ckpt_root, at_step, state, spec.specials_path, info,
+                   int(c["keep_last"]), int(c["keep_every"]), blocking=blocking)
+        return ckpt.step_dir(ckpt_root, at_step)
 
     stop = StopFlag()
     reason, losses, saved = "done", [], None
-    log_losses, log_t0, log_tokens = [], time.perf_counter(), 0
+    log_losses, log_t0, log_tokens = [], time.perf_counter(), 0   # log_losses stay on the device
     try:
         while step < stop_at:
             lr = lr_at(step, float(o["peak_lr"]), float(o["min_lr"]), int(o["warmup_steps"]), steps)
@@ -212,9 +215,7 @@ def train(spec: RunSpec) -> dict:
             opt.zero_grad(set_to_none=True)
             step += 1
             tokens_seen += tokens_per_step
-            loss_value = float(step_loss)
-            losses.append(loss_value)
-            log_losses.append(loss_value)
+            log_losses.append(step_loss)       # no .item() here: reading it would stall the GPU every step
             log_tokens += tokens_per_step
             wall = base_wall + time.perf_counter() - session_t0   # all resumes included
             if stop.reason:
@@ -223,10 +224,12 @@ def train(spec: RunSpec) -> dict:
                 reason = "max-cost"
 
             if step % log_every == 0 or step == stop_at or reason != "done":
+                values = torch.stack(log_losses).tolist()    # one GPU sync per log interval
+                losses += values
                 dt = max(time.perf_counter() - log_t0, 1e-9)
                 tps = log_tokens / dt
                 hours_left, dollars_left = guard.projection((steps - step) * tokens_per_step, tps)
-                row = {"step": step, "loss": sum(log_losses) / len(log_losses), "lr": lr,
+                row = {"step": step, "loss": sum(values) / len(values), "lr": lr,
                        "tokens_seen": tokens_seen, "tokens_per_sec": tps,
                        "mfu": mfu(tps, fpt, float(tc["cost"]["peak_flops"])),
                        "hours_left": hours_left, "dollars_left": dollars_left,
@@ -237,16 +240,17 @@ def train(spec: RunSpec) -> dict:
                 log_losses, log_t0, log_tokens = [], time.perf_counter(), 0
 
             if reason != "done":
-                saved = save(step)
+                saved = save(step, blocking=True)
                 print(f"stopping at step {step}: {reason}; checkpoint {saved}")
                 break
             if step % int(tc["checkpoint"]["every"]) == 0:
                 saved = save(step)
         else:
-            saved = save(step)
+            saved = save(step, blocking=True)
             if step < steps:
                 reason = "stop-step"
     finally:
+        saver.wait()        # never exit with a checkpoint half written
         stop.restore()
     return {"step": step, "steps": steps, "reason": reason, "checkpoint": saved,
             "tokens_seen": tokens_seen, "losses": losses, "n_params": n_params,

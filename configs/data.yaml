@@ -1,7 +1,6 @@
 # Data sources and build settings. Paths are relative to $ALETHIC_DATA_DIR.
-# `revision: null` means "not pinned yet": data-fetch resolves the commit hash on its first run
-# and writes it here; every other data command refuses to run while a revision is null.
-# text_column / key_column are filled in after M2 inspects the real parquet columns.
+# Revisions were resolved on 2026-11-09 with huggingface_hub and are pinned here; a null revision
+# stops every data command. `paths` are folders inside each dataset repo (checked on 2026-11-09).
 seed: 1234
 total_tokens: 6000000000
 target_scale: 1.0          # 0.1667 for the M3a subset (a prefix of the full build)
@@ -13,61 +12,67 @@ eos_id: 2
 
 sources:
   python:
-    repo: bigcode/starcoderdata
-    subsets: [python]
-    revision: null
+    repo: bigcode/starcoderdata          # gated: the owner must accept its terms on Hugging Face
+    revision: 9fc30b578cedaec69e47302df72cf00feed7c8c4
+    paths: [python]                      # 59 files, 23.16 GB parquet
     tokens: 2200000000
-    bytes_per_token: 3.5    # estimate until M2 measures it
-    text_column: null
-    key_column: null        # repo name
+    bytes_per_token: 3.5                 # estimate until M2 measures it
+    text_column: content                 # from the dataset card; verified once access is granted
+    key_column: max_stars_repo_name      # repo name
   code_other:
     repo: bigcode/starcoderdata
-    subsets: []             # up to 7 of shell, javascript, typescript, c, cpp, rust, go; owner approves in M2
-    revision: null
+    revision: 9fc30b578cedaec69e47302df72cf00feed7c8c4
+    # All seven exist (parquet GB): shell 1.52, javascript 24.91, typescript 10.50, c 19.10,
+    # cpp 16.42, rust 2.88, go 8.09. About 0.14B tokens each. Owner approves before any download.
+    paths: [shell, javascript, typescript, c, cpp, rust, go]
+    approved: false
     tokens: 1000000000
     bytes_per_token: 3.5
-    text_column: null
-    key_column: null        # repo name
+    text_column: content
+    key_column: max_stars_repo_name
   fineweb_edu:
     repo: HuggingFaceFW/fineweb-edu
-    subsets: []             # the CC-MAIN-2025-* configs, listed from the repo in M2
-    revision: null
+    revision: 87f09149ef4734204d70ed1d046ddc9ca3f2b8f9
+    paths: [data/CC-MAIN-2025-05, data/CC-MAIN-2025-08, data/CC-MAIN-2025-13,
+            data/CC-MAIN-2025-18, data/CC-MAIN-2025-21, data/CC-MAIN-2025-26]   # 50 files each
     tokens: 1700000000
     bytes_per_token: 4.0
-    text_column: null
-    key_column: null        # id
+    text_column: text
+    key_column: id
   math:
     repo: open-web-math/open-web-math
-    subsets: [default]
-    revision: null
+    revision: fde8ef8de2300f5e778f56261843dab89f230815
+    paths: [data]                        # 114 files, 27.43 GB
     tokens: 500000000
     bytes_per_token: 4.0
-    text_column: null
-    key_column: null        # url
+    text_column: text
+    key_column: url
   uzbek_latn:
     repo: HuggingFaceFW/fineweb-2
-    subsets: [uzn_Latn]
-    revision: null
+    revision: af9c13333eb981300149d5ca60a8e9d659b276b9
+    paths: [data/uzn_Latn/train]         # 1 file, 2.04 GB, 1,233,463 rows
     tokens: 400000000
     bytes_per_token: 2.6
-    text_column: null
-    key_column: null        # url
-    license: ODC-By         # attribution goes into manifest.json
+    text_column: text
+    key_column: url
+    license: ODC-By                      # attribution goes into manifest.json
   uzbek_cyrl:
     repo: HuggingFaceFW/fineweb-2
-    subsets: [uzn_Cyrl]
-    revision: null
+    revision: af9c13333eb981300149d5ca60a8e9d659b276b9
+    paths: [data/uzn_Cyrl/train]         # 1 file, 1.97 GB, 1,357,811 rows
     tokens: 200000000
     bytes_per_token: 4.0
-    text_column: null
-    key_column: null        # url
+    text_column: text
+    key_column: url
     license: ODC-By
 
 decontam:
   ngram: 13
   benchmarks:
-    humaneval: {repo: openai/openai_humaneval, revision: null}
-    mbpp: {repo: google-research-datasets/mbpp, revision: null}
+    humaneval: {repo: openai/openai_humaneval, revision: 7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544,
+                paths: [openai_humaneval], columns: [prompt, canonical_solution]}
+    mbpp: {repo: google-research-datasets/mbpp, revision: 4bb6404fdc6cacfda99d4ac4205087b89d32030c,
+           paths: [full], columns: [text, code]}
 
 paths:
   raw: raw
