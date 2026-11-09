@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+# Large files live under $ALETHIC_DATA_DIR, never in the repo.
+/data/
+/runs/
+*.bin
+*.pt
+.env

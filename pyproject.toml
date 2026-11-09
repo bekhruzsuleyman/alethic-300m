@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alethic"
+version = "0.1.0"
+description = "Alethic-300M: tokenizer, data pipeline and matched SGCA / GQA training"
+requires-python = ">=3.12"
+# The full dependency list. Nothing else may be added (plan, "Repo layout").
+dependencies = [
+    "torch",
+    "numpy",
+    "pyarrow",
+    "sentencepiece",
+    "regex",
+    "huggingface_hub",
+    "pyyaml",
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

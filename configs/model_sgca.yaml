@@ -1,0 +1,18 @@
+# SGCA (Sin-Gated Control Attention, bekhruz.org/research/sgca).
+# Identical to model_gqa.yaml except `attention`, `ffn_hidden` and `alpha_init`.
+# The FFN is narrower by exactly the parameters SGCA adds (gate_proj W, b and alpha).
+name: sgca
+attention: sgca           # gqa | sgca
+n_layers: 24
+d_model: 1024
+n_heads: 16
+n_kv_heads: 4
+head_dim: 64
+ffn_hidden: 2218          # (2560 - 2218) * 3 * 1024 = 1,050,624 = SGCA extras per layer
+vocab_size: 50000
+max_seq_len: 4096
+rope_theta: 10000.0
+norm_eps: 1.0e-6
+init_std: 0.02            # gate_proj W uses init_std too; its bias starts at 0
+alpha_init: 1.0           # alpha is a vector of length d_model
+expected_params: 302908416

@@ -1,0 +1,15 @@
+# GQA baseline. Identical to model_sgca.yaml except `attention` and `ffn_hidden`.
+name: gqa
+attention: gqa            # gqa | sgca
+n_layers: 24
+d_model: 1024
+n_heads: 16               # query heads
+n_kv_heads: 4
+head_dim: 64
+ffn_hidden: 2560          # SwiGLU width
+vocab_size: 50000
+max_seq_len: 4096
+rope_theta: 10000.0
+norm_eps: 1.0e-6
+init_std: 0.02            # output projections use init_std / sqrt(2 * n_layers)
+expected_params: 302908416

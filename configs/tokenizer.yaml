@@ -1,0 +1,41 @@
+# alethic-tokenizer-v1: SentencePiece Unigram, 50,000 ids.
+# Layout: 0-3 control (unk, bos, eos, pad), 4-67 <sp00>..<sp63>, then 256 byte pieces, then learned pieces.
+name: alethic-tokenizer-v1
+seed: 1234
+
+# Passed to sentencepiece.SentencePieceTrainer.train as-is.
+# user_defined_symbols is added by the code: <sp00>..<sp63>, then `whitespace_symbols` below.
+sentencepiece:
+  model_type: unigram
+  vocab_size: 50000
+  normalization_rule_name: identity
+  remove_extra_whitespaces: false
+  add_dummy_prefix: false
+  split_by_whitespace: false
+  allow_whitespace_only_pieces: true
+  byte_fallback: true
+  character_coverage: 1.0
+  max_sentencepiece_length: 32
+  max_sentence_length: 16384
+  shuffle_input_sentence: true
+  num_threads: 32
+  unk_id: 0
+  bos_id: 1
+  eos_id: 2
+  pad_id: 3
+
+# Only used if 4, 8 and 12 spaces do not each become one learned piece (plan, Tokenizer).
+# Write each run with U+2581 (e.g. "▁▁▁▁"), not spaces: space symbols are accepted but never match.
+whitespace_symbols: []
+
+sample:
+  size_bytes: 2000000000
+  max_line_bytes: 16384
+  weights: {python: 22, code_other: 10, fineweb_edu: 17, math: 5, uzbek_latn: 4, uzbek_cyrl: 2}
+
+evaluation:
+  heldout_docs_per_source: 2000
+  indentation_max_tokens: 2
+  indentation_min_share: 0.99
+  uzbek_max_tokens_per_word: 3.0
+  top_pieces: 30

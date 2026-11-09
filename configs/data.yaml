@@ -1,0 +1,76 @@
+# Data sources and build settings. Paths are relative to $ALETHIC_DATA_DIR.
+# `revision: null` means "not pinned yet": data-fetch resolves the commit hash on its first run
+# and writes it here; every other data command refuses to run while a revision is null.
+# text_column / key_column are filled in after M2 inspects the real parquet columns.
+seed: 1234
+total_tokens: 6000000000
+target_scale: 1.0          # 0.1667 for the M3a subset (a prefix of the full build)
+overfetch: 1.15            # stop downloading a source at 1.15 x its token target (estimated bytes)
+shard_tokens: 67108864     # 128 MiB of uint16 per shard, cut at document boundaries
+unit_max_tokens: 50000000  # one work unit = one file row range of at most ~50M tokens
+val_fraction: 0.001        # share of groups sent to validation by is_validation()
+eos_id: 2
+
+sources:
+  python:
+    repo: bigcode/starcoderdata
+    subsets: [python]
+    revision: null
+    tokens: 2200000000
+    bytes_per_token: 3.5    # estimate until M2 measures it
+    text_column: null
+    key_column: null        # repo name
+  code_other:
+    repo: bigcode/starcoderdata
+    subsets: []             # up to 7 of shell, javascript, typescript, c, cpp, rust, go; owner approves in M2
+    revision: null
+    tokens: 1000000000
+    bytes_per_token: 3.5
+    text_column: null
+    key_column: null        # repo name
+  fineweb_edu:
+    repo: HuggingFaceFW/fineweb-edu
+    subsets: []             # the CC-MAIN-2025-* configs, listed from the repo in M2
+    revision: null
+    tokens: 1700000000
+    bytes_per_token: 4.0
+    text_column: null
+    key_column: null        # id
+  math:
+    repo: open-web-math/open-web-math
+    subsets: [default]
+    revision: null
+    tokens: 500000000
+    bytes_per_token: 4.0
+    text_column: null
+    key_column: null        # url
+  uzbek_latn:
+    repo: HuggingFaceFW/fineweb-2
+    subsets: [uzn_Latn]
+    revision: null
+    tokens: 400000000
+    bytes_per_token: 2.6
+    text_column: null
+    key_column: null        # url
+    license: ODC-By         # attribution goes into manifest.json
+  uzbek_cyrl:
+    repo: HuggingFaceFW/fineweb-2
+    subsets: [uzn_Cyrl]
+    revision: null
+    tokens: 200000000
+    bytes_per_token: 4.0
+    text_column: null
+    key_column: null        # url
+    license: ODC-By
+
+decontam:
+  ngram: 13
+  benchmarks:
+    humaneval: {repo: openai/openai_humaneval, revision: null}
+    mbpp: {repo: google-research-datasets/mbpp, revision: null}
+
+paths:
+  raw: raw
+  hashes: hashes
+  shards: shards
+  tokenizer: tokenizer/alethic-tokenizer-v1

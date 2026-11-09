@@ -1,0 +1,37 @@
+# Training settings shared by both models. Paths are relative to $ALETHIC_DATA_DIR.
+seed: 1234
+device: cuda
+precision: bf16           # bf16 autocast with fp32 master weights; fp32 for CPU tests
+compile: true             # torch.compile
+seq_len: 4096
+batch_seqs: 16            # 16 x 4096 = 65,536 tokens per step
+micro_batch: 8            # 2 accumulation steps; lower it if memory runs out
+total_tokens: 6000000000  # steps = ceil(6e9 / 65,536) = 91,553
+steps: null               # null = computed from total_tokens; set a number for M4-M6 runs
+
+optim:
+  peak_lr: 4.0e-4
+  min_lr: 4.0e-5
+  warmup_steps: 1000
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  weight_decay: 0.1       # matrices only; not norms, biases, alpha or embeddings
+  grad_clip: 1.0
+
+checkpoint:
+  every: 500
+  keep_last: 2
+  keep_every: 10000
+
+log_every: 100
+eval_every: 1000          # periodic validation BPB (needs validation shards, M2+)
+
+cost:
+  price_per_hour: 3.0     # USD; set to the real rental price before M4
+  peak_flops: 989.0e12    # H100 SXM dense bf16, used for model FLOP utilization
+
+paths:
+  tokenizer: tokenizer/alethic-tokenizer-v1   # holds the .model file and FROZEN.json
+  shards: shards                              # holds manifest.json and the .bin shards
+  runs: runs
+  specials: tokenizer/specials.json
