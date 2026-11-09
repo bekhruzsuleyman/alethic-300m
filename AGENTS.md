@@ -19,10 +19,11 @@ it before building anything.
 
 | Milestone | Status |
 | --- | --- |
-| M0 repo skeleton, model, loader, all tests (laptop CPU) | **Done**: 30/30 tests pass |
+| M0 repo skeleton, model, loader, all tests (laptop CPU) | **Done**: 39/39 tests pass |
 | M1 tokenizer on Modal CPU | **Done**: 50,000-id Unigram trained, all gates passed (100% roundtrip, 100% indentation, Uzbek 2.17/2.55 tok/word), frozen (`28685edb...`), uploaded to HF (`4d3749af`) |
-| M2 / M3a data pipeline + 1B-token subset on Modal CPU | **In progress**: code & local tests done (39/39 pass); running on Modal CPU |
-| M4 – M8 | Next after M3a shards |
+| M2 & M3a data speed test + 1B-token subset on Modal CPU | **Done**: `1,061,655,074` tokens in 183s (`362.5k` tok/s/worker, `5.80M` tok/s total, `$0.05`), mix within ±0.36 pp of `37/17/28/8/10` (Uzbek `10.14%`), 58 decontam + 17 dedup drops |
+| M4 2,000-step GPU smoke test on Modal H100 (`m4_sgca` & `m4_gqa`) | **Done**: SGCA `139.7k` tok/s (`42.72% MFU`, val BPB `1.5269 → 1.1734`), GQA `149.0k` tok/s (`45.57% MFU`, val BPB `1.6055 → 1.1638`); checkpoints & logs backed up to HF |
+| M5 – M8 | Ready next (est. `~$24.00` Modal free credits remaining) |
 
 Update this table when a milestone's gate is passed.
 

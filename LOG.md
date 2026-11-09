@@ -379,3 +379,35 @@ Numbers are exact where they were measured. Times are local (UTC+5).
     `on_checkpoint` hooks in `AsyncSaver` so every 500-step GPU checkpoint commits to the Modal Volume.
 - `[test]` Added `tests/test_data_pipeline.py` (dedup, 13-gram decontam, end-to-end local `data-build`,
   `state.jsonl` resume idempotence, and `evaluate_bpb`). **39 passed, 0 failed** on laptop CPU ($0).
+
+### M2 & M3a 1B-token shard build on Modal CPU (01:10–01:15)
+
+- `[cost]` Spawned `data_build_remote(target_scale=0.1667, workers=16)` (`ap-KWArELTgrWC4n6lyUeHs4x`,
+  call `fc-01M70YZ4CY7AYYZC5JE2STRNBK`) on 16 CPU cores + 32 GiB RAM (`$1.01/h`).
+- `[finding]` Finished in **183.05 s (3.05 min)**, cost **`$0.05`**:
+  - Encoded **`1,061,655,074` tokens** (`1,060,637,876` train + `1,017,198` val across 235 shards).
+  - Throughput: **`5,799,943.0` tokens/s total** (`362,496.4` tokens/s/worker — 7.25× the 50k M2 gate).
+  - Mix shares (`shards/manifest.json`): `python` **36.36%**, `code_other` **16.31%**, `fineweb_edu` **28.63%**,
+    `math` **8.56%**, `uzbek` **10.14%** (`6.91%` Latin + `3.23%` Cyrillic) — max deviation **0.36 pp** from
+    the `37 / 17 / 28 / 8 / 10` target (gate: ±2 pp).
+  - Dropped **17** exact duplicates out of `1,096,476` documents and **58** benchmark-contaminated documents
+    (57 Python, 1 math); normalized `3,590,220` Latin and `11,949` Cyrillic Uzbek apostrophes.
+
+### M4 2,000-step GPU smoke test (`m4_sgca` & `m4_gqa` on H100, 01:18–01:59)
+
+- `[cost]` Ran `m4_sgca` (`ap-vv6G62iyVU0jdkTirOSyIp`, `$1.38`) and `m4_gqa` (`ap-ublzMJncsZBNUAvkPMl5l6`,
+  `$1.16`) on `NVIDIA H100 80GB HBM3` + 4 CPU cores + 32 GiB RAM (`$4.39/h`) for 2,000 steps (`131,072,000`
+  tokens each) with `--resume auto --stop-step 2000 --max-cost 3.0`.
+- `[finding]` **Speed & MFU:**
+  - `m4_sgca`: **`139,656` tokens/s**, **`42.72% MFU`** (projected 6B run: `11.93 h`).
+  - `m4_gqa`: **`148,952` tokens/s**, **`45.57% MFU`** (projected 6B run: `11.19 h`).
+- `[finding]` **Loss & validation BPB (`1,017,192` val tokens across all 6 sources):**
+  - Step 1,000: SGCA train loss **`4.4792`** vs GQA `4.7455`; SGCA val `overall_bpb` **`1.526906`** vs GQA
+    `1.605544` (SGCA ahead on all 6 sources at end of warmup).
+  - Step 2,000: SGCA train loss `3.3186` vs GQA `3.3185`; val `overall_bpb`: SGCA `1.173432` vs GQA `1.163813`
+    (SGCA ahead on `fineweb_edu` `1.3136` vs `1.3147`, `uzbek_latn` `1.5795` vs `1.5926`, and `uzbek_cyrl`
+    `1.0632` vs `1.0758`; GQA ahead on `python` `0.8897` vs `0.9064`, `code_other` `1.0996` vs `1.1428`, and
+    `math` `1.4511` vs `1.4701`).
+  - Atomic 500-step checkpoints (`step_0000500`, `step_0001000`, `step_0001500`, `step_0002000`, pruned to
+    keep the last two: `1500` and `2000`) verified on the Volume and backed up to private HF repo
+    `bekhruzsuleyman/alethic-300m`.

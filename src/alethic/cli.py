@@ -65,6 +65,13 @@ def cmd_train(args: argparse.Namespace,
 
     model_cfg = load_config(args.model)
     train_cfg = load_config(args.train)
+    if getattr(args, "steps", None):
+        train_cfg["steps"] = int(args.steps)
+    if getattr(args, "peak_lr", None):
+        train_cfg["optim"]["peak_lr"] = float(args.peak_lr)
+        train_cfg["optim"]["min_lr"] = float(args.peak_lr) / 10.0
+    if getattr(args, "warmup_steps", None) is not None:
+        train_cfg["optim"]["warmup_steps"] = int(args.warmup_steps)
     paths = train_cfg["paths"]
     _, tokenizer_sha = verify_frozen(resolve_path(paths["tokenizer"]))
     shards, manifest = train_shards_from_manifest(resolve_path(paths["shards"]))
@@ -99,6 +106,13 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
     model_cfg = load_config(args.model)
     train_cfg = load_config(args.train)
+    if getattr(args, "steps", None):
+        train_cfg["steps"] = int(args.steps)
+    if getattr(args, "peak_lr", None):
+        train_cfg["optim"]["peak_lr"] = float(args.peak_lr)
+        train_cfg["optim"]["min_lr"] = float(args.peak_lr) / 10.0
+    if getattr(args, "warmup_steps", None) is not None:
+        train_cfg["optim"]["warmup_steps"] = int(args.warmup_steps)
     paths = train_cfg["paths"]
     device = args.device or train_cfg["device"]
     if args.checkpoint:
@@ -163,6 +177,9 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--resume", default="none", help="'auto' (latest checkpoint), 'none', or a checkpoint folder")
     t.add_argument("--max-cost", type=float, default=None, help="dollars; save a checkpoint and stop when reached")
     t.add_argument("--stop-step", type=int, default=None, help="stop after this many total steps (schedule unchanged)")
+    t.add_argument("--steps", type=int, default=None, help="override train.yaml steps (changes cosine schedule length)")
+    t.add_argument("--peak-lr", type=float, default=None, help="override optim.peak_lr (and min_lr = peak_lr / 10)")
+    t.add_argument("--warmup-steps", type=int, default=None, help="override optim.warmup_steps")
     t.add_argument("--device", default=None, help="override train.yaml device, e.g. cpu")
     t.set_defaults(func=cmd_train)
     return parser

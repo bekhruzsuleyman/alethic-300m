@@ -140,3 +140,85 @@ None were started. Nothing is running or billing.
 - **Uzbek apostrophe normalization (`sample.json`):** `1,829,104` chars normalized in `uzbek_latn`, `3,968` chars normalized in `uzbek_cyrl`.
 - **Measured timings (`timings.json`):** `train_seconds: 5003.42` (83.4 min across 3 EM stages `1M → 300k → 120k → 50k` on 32 threads), `eval_seconds: 63.36` (1.06 min).
 - **Modal cost:** ~$3.40 of the $30/month free Starter credits across sample download + run 2 (cancelled by local CLI 60-min timeout) + run 3 (spawned with EM checkpoints at 300k and 120k, 32 GiB RAM).
+
+---
+
+## M2 & M3a: Data pipeline speed test and 1B-token shard build (`--target-scale 0.1667`), 2026-11-10
+
+**Gates:**
+- **M2:** Kill and rerun gives identical shard hashes (`test_shard_atomic` + `test_encode_units_and_eval_bpb`); throughput ≥ 50,000 tokens/sec/worker measured; projected cost of the full 6B-token build recorded.
+- **M3a:** 1B-token subset built (`target_scale = 0.1667`); every source within ±2 percentage points of `37 / 17 / 28 / 8 / 10` and Uzbek ≥ 9%; `shards/manifest.json` verified; decontamination and deduplication counts recorded.
+**Result: passed.**
+
+### Commands
+
+```text
+python -m pytest -q
+modal run --detach deploy/modal_app.py::data_build --target-scale 0.1667 --workers 16 --spawn
+```
+
+### Measured throughput and projected 6B build cost (`M2`)
+
+| Metric | Value |
+| --- | --- |
+| Container | Modal CPU: 16 physical cores (32 vCPU) + 32 GiB RAM (`$1.01/h`) |
+| Workers | 16 |
+| Total tokens encoded | `1,061,655,074` (`1,060,637,876` train + `1,017,198` val across 235 shards) |
+| Wall time (`elapsed_seconds`) | **`183.05 s` (3.05 min)** |
+| Total throughput (`tokens_per_sec_total`) | **`5,799,943.0` tokens/s** |
+| Throughput per worker (`tokens_per_sec_per_worker`) | **`362,496.4` tokens/s/worker** (7.25× the 50k gate) |
+| M3a 1B build cost | **`$0.05`** (`183.05 s / 3600 × $1.01/h`) |
+| Projected full 6B-token build (`M3b`, remaining 5B tokens) | **`~15–18 min` (`~$0.25–$0.30`)** continuing from `state.jsonl` |
+
+### M3a 1B-token mix, deduplication, and decontamination (`shards/manifest.json`)
+
+- `tokenizer_sha256`: `28685edb461ce3baa8b36f08c32cb04c8f6cb2c1c0c79c6e737816ad214a382b`
+- `shards_sha256` (221 train shards): `fdb5f43b83d2cf34ba98ca328a3ac09806d160bc9c8a9a61e1eace02c9408adc`
+
+| Source | Target Share | Actual Share | Diff (pp) | Total Tokens | Train Tokens | Val Tokens | Dedup Dropped | Decontam Dropped (13-gram) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `python` | 36.67% | **36.36%** | -0.31 | 386,045,492 | 385,692,433 | 353,059 | 5 | 57 |
+| `code_other` | 16.67% | **16.31%** | -0.36 | 173,169,866 | 172,980,480 | 189,386 | 2 | 0 |
+| `fineweb_edu` | 28.33% | **28.63%** | +0.30 | 303,899,168 | 303,636,488 | 262,680 | 0 | 0 |
+| `math` | 8.33% | **8.56%** | +0.23 | 90,885,088 | 90,813,252 | 71,836 | 0 | 1 |
+| `uzbek_latn` | 6.67% | **6.91%** | +0.24 | 73,368,989 | 73,299,572 | 69,417 | 6 | 0 |
+| `uzbek_cyrl` | 3.33% | **3.23%** | -0.10 | 34,286,471 | 34,215,651 | 70,820 | 0 | 0 |
+| **Total / Combined** | **100.00%** (Uzbek 10.0%) | **100.00%** (Uzbek **10.14%**) | max **0.36 pp** | **1,061,655,074** | **1,060,637,876** | **1,017,198** | **17** (`1,096,476` docs) | **58** |
+
+- **Uzbek apostrophe edits:** `3,590,220` chars normalized in `uzbek_latn`, `11,949` in `uzbek_cyrl`.
+- **Attributions recorded in `manifest.json`:** `HuggingFaceFW/fineweb-2` (`af9c13333eb981300149d5ca60a8e9d659b276b9`, license `ODC-By`).
+
+---
+
+## M4: 2,000-step GPU smoke test on Modal H100 (`m4_sgca` & `m4_gqa`), 2026-11-10
+
+**Gate:** Train both `sgca` and `gqa` (`302,908,416` params each) for 2,000 steps (`131,072,000` tokens) on the M3a shards with identical seed (`1234`), data order, and hyperparameters; verify loss falls, measure `tokens_per_sec` and `MFU` (≥ 30%), record validation BPB per source and overall at steps 1,000 and 2,000, verify atomic 500-step checkpoints, and project full 6B-token run cost and duration. **Result: passed.**
+
+### Machine & software versions (`runs.jsonl`)
+
+- **Container:** `NVIDIA H100 80GB HBM3` + 4 physical CPU cores + 32 GiB RAM (`$4.39/h` on Modal)
+- **Software:** Python `3.12.16`, PyTorch `2.15.0+cu132` (`bf16` + `torch.compile`), CUDA `13.2`, NumPy `2.5.4`, SentencePiece `0.2.3`
+- **Config & checkpoint hashes:**
+  - `m4_sgca`: `model_config_sha256 = 6a741d419c9a0ea0131b0ad8555b0787feab36be4d3aff5396c951c4871cbc1e`, `step_0002000/state.pt` `state_sha256 = e37685aefc5b57b60d50298e66e12efc35238f69e26c7d4aac376578a6988845`
+  - `m4_gqa`: `model_config_sha256 = f0df244634935342c633cff44c1ee73d0c1fd30262736e77657160764700fd0e`, `step_0002000/state.pt` `state_sha256 = 0ab4176c90a8dda98d1c2aafe2b7a08ed638375194a4ca5fb1fe185fb24c0b5a`
+
+### Speed, MFU, loss trajectory, and 6B-token cost projection
+
+| Model | Step 100 Loss | Step 500 Loss | Step 1000 Loss | Step 1500 Loss | Step 2000 Loss | Steady-State tok/s | Steady-State MFU | 2,000-Step Cost | Projected 6B Run (91,553 steps) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| **SGCA** (`m4_sgca`) | 9.2027 | **5.8798** | **4.4792** | **3.5904** | 3.3186 | **`139,656` tok/s** | **`42.72%`** | `$1.38` | **`11.93 h`** (`$52.38` at Modal `$4.39/h`; `~$26–$33` on Vast.ai H100) |
+| **GQA** (`m4_gqa`) | 8.8623 | 6.0781 | 4.7455 | 3.6585 | 3.3185 | **`148,952` tok/s** | **`45.57%`** | `$1.16` | **`11.19 h`** (`$49.12` at Modal `$4.39/h`; `~$24–$31` on Vast.ai H100) |
+
+### Validation bits per byte (`val_log.jsonl`, `1,017,192` val tokens = `4,085,874` UTF-8 bytes)
+
+| Step & Model | Overall BPB | `python` BPB | `code_other` BPB | `fineweb_edu` BPB | `math` BPB | `uzbek_latn` BPB | `uzbek_cyrl` BPB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **Step 1,000 — SGCA** | **`1.526906`** | **`1.300738`** | **`1.675784`** | **`1.595360`** | **`1.834102`** | **`1.919390`** | **`1.290044`** |
+| **Step 1,000 — GQA** | `1.605544` | `1.386307` | `1.769109` | `1.644097` | `1.909167` | `2.017571` | `1.418431` |
+| **Step 2,000 — SGCA** | `1.173432` | `0.906362` | `1.142758` | **`1.313570`** | `1.470070` | **`1.579454`** | **`1.063173`** |
+| **Step 2,000 — GQA** | **`1.163813`** | **`0.889746`** | **`1.099619`** | `1.314693` | **`1.451142`** | `1.592587` | `1.075824` |
+
+- **Observations:**
+  1. At **step 1,000** (end of warmup), **SGCA leads GQA across all 6 sources** by **0.0786 BPB overall** (`1.5269` vs `1.6055`).
+  2. At **step 2,000** (`131M` tokens), **SGCA leads on all natural-language streams** (`fineweb_edu` `1.3136` vs `1.3147`, `uzbek_latn` `1.5795` vs `1.5926`, `uzbek_cyrl` `1.0632` vs `1.0758`), while GQA edges ahead on code (`python` `0.8897` vs `0.9064`, `code_other` `1.0996` vs `1.1428`).
+  3. Both models exceed **42.7% MFU** on H100 (vs the 30% gate), cutting projected 1B-token M6 runtime to **`1.99 hours` (SGCA)** and **`1.86 hours` (GQA)**.
