@@ -237,3 +237,11 @@ Numbers are exact where they were measured. Times are local (UTC+5).
 - `[next]` Owner to confirm what goes there. Proposed: the frozen tokenizer (M1), checkpoints and final
   weights (M4–M7), which also solves the Modal → Vast.ai move. Shards (about 12 GB) fit better in a
   separate private dataset repo. Each upload is approved by the owner first.
+
+### Modal login (20:30)
+
+- `[setup]` Owner ran `python -m modal setup` (needed `PYTHONUTF8=1 PYTHONIOENCODING=utf-8`: without it the
+  Windows console crashed with a `'charmap' codec` error; bash also strips backslashes, so use
+  `.venv/Scripts/python`). Token saved to `~/.modal.toml`, workspace `bekhruzsuleyman`.
+- `[setup]` Modal Secret `huggingface` exists (created 20:27 by the owner). `probe_write` now requires the
+  key `HF_TOKEN` and reports only whether it is present. No Modal apps running; $0 spent.

@@ -29,6 +29,8 @@ DATA = "/data"
 
 app = modal.App("alethic-300m")
 volume = modal.Volume.from_name("alethic-data", create_if_missing=True, version=2)
+# Created by the owner in the Modal dashboard; holds HF_TOKEN. Never print its value.
+hf_secret = modal.Secret.from_name("huggingface", required_keys=["HF_TOKEN"])
 
 # Same pinned versions as the laptop; on Linux the torch wheel from PyPI is the CUDA build.
 image = (
@@ -48,12 +50,12 @@ def run_tests() -> tuple[int, str]:
     return proc.returncode, "\n".join((proc.stdout + proc.stderr).splitlines()[-15:])
 
 
-@app.function(image=image, cpu=0.5, memory=1024, timeout=600, volumes={DATA: volume})
+@app.function(image=image, cpu=0.5, memory=1024, timeout=600, volumes={DATA: volume}, secrets=[hf_secret])
 def probe_write() -> dict:
     """Check what crash safety relies on: fsync and atomic rename of files and folders on the Volume."""
     root = Path(DATA) / "_probe"
     root.mkdir(parents=True, exist_ok=True)
-    out = {}
+    out = {"hf_token_present": bool(os.environ.get("HF_TOKEN"))}   # True/False only, never the value
     tmp, final = root / "a.bin.tmp", root / "a.bin"
     with open(tmp, "wb") as f:
         f.write(os.urandom(1 << 20))
