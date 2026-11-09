@@ -44,8 +44,11 @@ image = (
 )
 
 # Data and tokenizer work needs no torch: a smaller image that builds and starts faster.
-CPU_PACKAGES = [line.strip() for line in (REPO / "requirements.txt").read_text().splitlines()
-                if line.strip() and not line.startswith("#") and not line.startswith("torch")]
+# This file is imported again inside each container (as /root/modal_app.py), where the repo's
+# requirements.txt is not at REPO; the image is only built from the laptop, so read it only there.
+_REQ = REPO / "requirements.txt"
+CPU_PACKAGES = [line.strip() for line in _REQ.read_text().splitlines()
+                if line.strip() and not line.startswith("#") and not line.startswith("torch")] if _REQ.exists() else []
 cpu_image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install(*CPU_PACKAGES)
@@ -152,6 +155,20 @@ def tok_train() -> int:
 def tokenizer_sample(streams: str = "fineweb_edu,math,uzbek_latn,uzbek_cyrl") -> None:
     """modal run deploy/modal_app.py::tokenizer_sample --streams fineweb_edu,math"""
     print("exit code", tok_sample.remote(streams))
+
+
+ALL_STREAMS = ("python,code_other/shell,code_other/javascript,code_other/typescript,code_other/c,"
+               "code_other/cpp,code_other/rust,code_other/go,fineweb_edu,math,uzbek_latn,uzbek_cyrl")
+
+
+@app.local_entrypoint()
+def tokenizer_all() -> None:
+    """modal run --detach deploy/modal_app.py::tokenizer_all
+    Every sample stream on the cheap container, then merge + train + eval + freeze on the big one."""
+    code = tok_sample.remote(ALL_STREAMS)
+    print("sample exit code", code)
+    if code == 0:
+        print("train exit code", tok_train.remote())
 
 
 @app.local_entrypoint()

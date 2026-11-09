@@ -17,7 +17,7 @@ sources:
     paths: [python]                      # 59 files, 23.16 GB parquet
     tokens: 2200000000
     bytes_per_token: 3.5                 # estimate until M2 measures it
-    text_column: content                 # from the dataset card; verified once access is granted
+    text_column: content                 # verified 2026-11-09 (python file 0: 218,079 rows)
     key_column: max_stars_repo_name      # repo name
   code_other:
     repo: bigcode/starcoderdata
@@ -25,7 +25,7 @@ sources:
     # All seven exist (parquet GB): shell 1.52, javascript 24.91, typescript 10.50, c 19.10,
     # cpp 16.42, rust 2.88, go 8.09. About 0.14B tokens each. Owner approves before any download.
     paths: [shell, javascript, typescript, c, cpp, rust, go]
-    approved: false
+    approved: true        # owner approved the seven languages on 2026-11-09
     tokens: 1000000000
     bytes_per_token: 3.5
     text_column: content
