@@ -88,7 +88,9 @@ checked by building them on the meta device (exact shapes, no memory).
 2. **`<spNN>` text can be typed.** The slots are `user_defined_symbols`, as the plan says, so the
    literal text `<sp05>` in user input encodes to the special id. Names such as `<thinking>` are
    safe. `control_symbols` would block this, but then `<sp00>` text would no longer encode to one id,
-   which contradicts `test_vocab_ids`. Owner decision.
+   which contradicts `test_vocab_ids`. **Owner decision (2026-11-09): keep `user_defined_symbols` as
+   the plan says.** The app that serves the model should treat user text containing `<sp` with care
+   once a slot is in use (first planned use: M8 image tokens).
 3. **Whitespace symbols must be written with `▁`.** `user_defined_symbols` that contain real spaces are
    accepted but never match. Written as `▁▁▁▁…` they work (checked with 16 and 20). `train.py` now
    refuses the space form. The tiny tokenizer learned 4, 8 and 12-space pieces without this fallback.
