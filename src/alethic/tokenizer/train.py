@@ -30,6 +30,14 @@ REQUIRED_OPTIONS = {
 }
 
 
+# Escape that keeps a literal U+2581 exact. SentencePiece uses U+2581 as its own space marker,
+# so a real one would decode as " ". Before encoding, a real U+2581 becomes U+E000 "0" and a real
+# U+E000 becomes U+E000 "1"; decoding reverses both. Like "\\" in strings, so it is lossless.
+# Both rule sets are stored inside the .model file (verified on sentencepiece 0.2.3).
+NORMALIZE_RULES = "2581\tE000 30\nE000\tE000 31\n"
+DENORMALIZE_RULES = "E000 30\t2581\nE000 31\tE000\n"
+
+
 class TokenizerConfigError(RuntimeError):
     """tokenizer.yaml contradicts a setting the plan fixes."""
 
@@ -59,6 +67,14 @@ def spm_options(cfg: dict, input_path: str | Path, model_prefix: str | Path,
     opts["user_defined_symbols"] = all_slot_pieces() + extra
     opts["input"] = str(input_path)
     opts["model_prefix"] = str(model_prefix)
+    if cfg.get("u2581_escape", True):
+        # Identity plus the U+2581 escape: the rule files replace the "identity" rule name.
+        out = Path(model_prefix).parent
+        (out / "normalize.tsv").write_text(NORMALIZE_RULES, encoding="utf-8")
+        (out / "denormalize.tsv").write_text(DENORMALIZE_RULES, encoding="utf-8")
+        del opts["normalization_rule_name"]
+        opts["normalization_rule_tsv"] = str(out / "normalize.tsv")
+        opts["denormalization_rule_tsv"] = str(out / "denormalize.tsv")
     return opts
 
 
@@ -68,9 +84,8 @@ def train_tokenizer(cfg: dict, input_path: str | Path, out_dir: str | Path,
 
     Returns the model path and the training time in seconds.
     """
-    out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    prefix = out / cfg["name"]
+    prefix = Path(out_dir) / cfg["name"]
+    prefix.parent.mkdir(parents=True, exist_ok=True)
     opts = spm_options(cfg, input_path, prefix, overrides)
     spm.set_random_generator_seed(int(cfg["seed"]))
     start = time.perf_counter()

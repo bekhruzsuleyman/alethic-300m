@@ -85,6 +85,9 @@ class Codec:
             token_id = FIRST_SLOT_ID + slot
             if self.piece(token_id) != slot_piece(slot):
                 raise CodecError(f"id {token_id} is {self.piece(token_id)!r}, expected {slot_piece(slot)!r}")
+        for probe in ("\u2581", "\ue000", "a\u2581 \ue0000"):
+            if self.decode(self.encode(probe)) != probe:
+                raise CodecError("model lacks the U+2581 escape rules; retrain with u2581_escape: true")
         missing = [b for b in range(256) if not self.is_byte(self.sp.piece_to_id(f"<0x{b:02X}>"))]
         if missing:
             raise CodecError(f"byte-fallback pieces missing for {len(missing)} bytes; train with byte_fallback")

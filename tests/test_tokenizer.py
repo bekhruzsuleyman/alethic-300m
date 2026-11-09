@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import random
 
-import pytest
-
 from alethic.tokenizer.specials import NUM_SLOTS, slot_piece
 
 HARD_CASES = [
@@ -35,7 +33,7 @@ def _random_text(rng: random.Random) -> str:
     """Random text mixing ASCII, whitespace, several scripts, emoji and arbitrary code points."""
     pools = [
         lambda: rng.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJ0123456789(){}[]:;.,=+-*/'\"#_"),
-        lambda: rng.choice([" ", "  ", "    ", "\t", "\n", "\r\n", "\r", "\x0b", "\x0c"]),
+        lambda: rng.choice([" ", "  ", "    ", "\t", "\n", "\r\n", "\r", "\x0b", "\x0c", "▁", ""]),
         lambda: chr(rng.randint(0x00A0, 0x024F)),    # Latin-1 and Latin Extended
         lambda: chr(rng.randint(0x0400, 0x04FF)),    # Cyrillic
         lambda: chr(rng.randint(0x4E00, 0x9FFF)),    # CJK
@@ -56,14 +54,18 @@ def test_tokenizer_roundtrip(tiny_codec):
     assert batch == [tiny_codec.encode(s) for s in samples]
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Known SentencePiece limitation, reported to the owner in M0: the input character U+2581 '▁' "
-    "is SentencePiece's own space marker, so it decodes as ' '. escape_whitespaces=false would fix "
-    "it but the Unigram trainer in sentencepiece 0.2.3 rejects that. Owner decision needed before M1."))
 def test_u2581_roundtrip(tiny_codec):
-    """A literal U+2581 in the input does not survive encode/decode (documents the limitation)."""
-    text = "pieces like '▁the' in tokenizer code"
-    assert tiny_codec.decode(tiny_codec.encode(text)) == text
+    """A literal U+2581 (SentencePiece's space marker) and the escape marker U+E000 survive exactly."""
+    b, e = "▁", ""
+    cases = [f"pieces like '{b}the' in tokenizer code", b, b * 5, f" {b} ", e, e + "0", e + "1",
+             f"{e}{b}{e}", f"x{e} 0", f"{b}0{e}1", f"if s.startswith('{b}'):\n    s = s[1:]\n"]
+    rng = random.Random(99)
+    cases += ["".join(rng.choice([b, e, "0", "1", " ", "\n", "a"]) for _ in range(rng.randint(0, 30)))
+              for _ in range(2000)]
+    failures = [s for s in cases if tiny_codec.decode(tiny_codec.encode(s)) != s]
+    assert not failures, f"{len(failures)}/{len(cases)} failed, first: {failures[0]!r}"
+    assert tiny_codec.decode(tiny_codec.encode(" x")) == " x"   # ordinary spaces unaffected
+    assert tiny_codec.encode("    ") == [tiny_codec.sp.piece_to_id("▁" * 4)]
 
 
 def test_newline_bytes(tiny_codec):

@@ -2,8 +2,7 @@
 
 ## M0: repo skeleton, model, loader, all tests (laptop CPU), 2026-11-09
 
-**Gate:** every test in the plan's table is green. **Result: passed.** 29 passed, 1 expected failure
-(`test_u2581_roundtrip`, a newly found SentencePiece limitation, see "Surprises"). Cost $0.
+**Gate:** every test in the plan's table is green. **Result: passed.** 30 passed, 0 failed. Cost $0.
 
 ### Machine and software
 
@@ -30,7 +29,7 @@ py -3.12 -m venv .venv
 
 | File | SHA-256 |
 | --- | --- |
-| configs/tokenizer.yaml | b886d542f3afccc7e73eb8a6e4bf6e7395884e78bb42fbe4b4c4e848dcf9ac1f |
+| configs/tokenizer.yaml | a18af72def5ad1ace0a47e50b2629e045c5f7bb0cb363da4af8e103e1521d6ae |
 | configs/data.yaml | f45bb084fc4c58e74b7f218d26f7f5477aa0e0fec72a46a1bf71fc2b551f9c17 |
 | configs/model_sgca.yaml | 5c16a1bef1edb34b9a4ce59093e08501a66cac182e4aa4169e2b1bba601f6463 |
 | configs/model_gqa.yaml | ffb0ae450703e47032876a3af9954c61306194dfa597f20955074669ec01ee20 |
@@ -42,7 +41,8 @@ There is no tokenizer hash yet: the tokenizer is trained and frozen in M1.
 
 | Plan test | Result | Notes |
 | --- | --- | --- |
-| test_tokenizer_roundtrip | pass | 20 hard cases plus 2,000 random strings (all code points except surrogates), 100% |
+| test_tokenizer_roundtrip | pass | 20 hard cases plus 2,000 random strings (all code points except surrogates, plus U+2581 and U+E000), 100% |
+| test_u2581_roundtrip (extra) | pass | literal U+2581 and the escape marker U+E000: 11 cases plus 2,000 random strings, 100% |
 | test_newline_bytes | pass | `"\n"` → `[<0x0A>]` (id 78) |
 | test_indentation | pass | newline + 4 / 8 / 12 spaces → `<0x0A>` + one learned piece = 2 tokens |
 | test_vocab_ids | pass | ids 0-3 control, 4-67 `<sp00>`..`<sp63>`, 68-323 bytes, learned from 324 |
@@ -76,12 +76,15 @@ checked by building them on the meta device (exact shapes, no memory).
 
 ### Surprises
 
-1. **Literal U+2581 (`▁`) does not round-trip.** SentencePiece turns spaces into `▁` internally, so a
-   real `▁` in the input decodes as a space. `escape_whitespaces=false` would fix it, but
+1. **Literal U+2581 (`▁`) did not round-trip; fixed with an escape.** SentencePiece turns spaces into
+   `▁` internally, so a real `▁` decoded as a space. `escape_whitespaces=false` would avoid it, but
    sentencepiece 0.2.3's Unigram trainer stops with `unigram_model_trainer.cc(828)
-   [normalizer_spec_.escape_whitespaces()]`. This breaks the M1 gate ("round trip 100%") for any
-   document that contains `▁` (it shows up in tokenizer-related Python code). Recorded as the strict
-   xfail `test_u2581_roundtrip`. Owner decision needed before M1.
+   [normalizer_spec_.escape_whitespaces()]`. Fix (owner asked for 100% round trip): normalization is
+   identity plus two escape rules stored inside the .model file. A real U+2581 becomes U+E000 "0" and a
+   real U+E000 becomes U+E000 "1"; decoding reverses both, like `\` in strings. No other character is
+   changed (no NFKC). Cost: a real `▁` takes 4 tokens (3 bytes of U+E000 plus "0"); it is rare.
+   Caveat for later: llama.cpp ignores SentencePiece normalization rules, so an app on llama.cpp must
+   apply the same two-rule escape itself (training data and the Python codec are exact).
 2. **`<spNN>` text can be typed.** The slots are `user_defined_symbols`, as the plan says, so the
    literal text `<sp05>` in user input encodes to the special id. Names such as `<thinking>` are
    safe. `control_symbols` would block this, but then `<sp00>` text would no longer encode to one id,

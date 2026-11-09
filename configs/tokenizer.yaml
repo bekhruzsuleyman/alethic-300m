@@ -24,6 +24,11 @@ sentencepiece:
   eos_id: 2
   pad_id: 3
 
+# Keep a literal U+2581 exact: SentencePiece uses U+2581 as its space marker, so without this a real
+# one decodes as a space. Escape rules (real U+2581 -> U+E000 "0", real U+E000 -> U+E000 "1", reversed
+# on decode) are stored inside the .model file. Normalization is otherwise identity (no NFKC).
+u2581_escape: true
+
 # Only used if 4, 8 and 12 spaces do not each become one learned piece (plan, Tokenizer).
 # Write each run with U+2581 (e.g. "▁▁▁▁"), not spaces: space symbols are accepted but never match.
 whitespace_symbols: []
