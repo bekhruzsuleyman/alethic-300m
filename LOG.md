@@ -281,3 +281,18 @@ Numbers are exact where they were measured. Times are local (UTC+5).
 - `[cost]` Owner approved running. Launched on Modal (detached): `tokenizer_sample` for
   `fineweb_edu, math, uzbek_latn, uzbek_cyrl` on 2 cores + 16 GiB ($0.22/h). Python and other-code
   streams wait for StarCoderData access and the owner's approval of the language list.
+
+### First Modal job failed; StarCoderData access granted; full M1 launched (21:00)
+
+- `[bug]` The first `tokenizer_sample` job failed at container startup: Modal re-imports the launcher
+  inside the container as `/root/modal_app.py`, where `REPO / "requirements.txt"` is `/requirements.txt`
+  and does not exist. Only the image build had run (cost close to $0). Fix: read requirements.txt
+  only when it exists (on the laptop, where images are built).
+- `[decision]` Owner: "I approved" — StarCoderData terms accepted (checked: python file 0 opens,
+  218,079 rows, 219 row groups; shell file 0: 551,582 rows) and the seven other-code languages
+  approved (`approved: true` in data.yaml).
+- `[finding]` StarCoderData columns: `max_stars_repo_path`, `max_stars_repo_name`, `max_stars_count`,
+  `id`, `content` — matches data.yaml (`content` text, `max_stars_repo_name` group key).
+- `[cost]` Launched `modal run --detach deploy/modal_app.py::tokenizer_all`: all 12 sample streams on
+  2 cores + 16 GiB ($0.22/h), then merge + SentencePiece (32 threads) + eval + freeze on
+  16 cores + 128 GiB ($1.78/h).
