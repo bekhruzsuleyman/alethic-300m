@@ -179,3 +179,51 @@ Numbers are exact where they were measured. Times are local (UTC+5).
 - `[next]` M1, tokenizer on the Hetzner CCX53 ($1.0098 per started hour; estimate $2–3). Needs the
   owner to accept StarCoderData's terms on Hugging Face, rent the server and set `HF_TOKEN` there.
   Not started until the owner says go.
+
+### Shift to Modal, then Vast.ai (20:03)
+
+- `[decision]` Owner: run on **Modal** while the Starter plan's **$30/month free credits** last, then
+  move to **Vast.ai**. Hetzner is dropped. This replaces the plan's "Where it runs" row.
+- `[finding]` Modal prices and limits (modal.com/pricing and docs, read 2026-11-09):
+
+  | Item | Price | Per hour |
+  | --- | --- | --- |
+  | H100 SXM | $0.001097/s | $3.949 |
+  | A100 80 GB | $0.000694/s | $2.498 |
+  | CPU, per physical core (= 2 vCPU) | $0.0000131/s | $0.0472 |
+  | Memory | $0.00000222/GiB/s | $0.0080 per GiB |
+  | Volume storage | $0.09/GiB/month | — |
+
+  Starter: $30/month free credits, 100 containers, 10 GPUs at once, pay-as-you-go beyond that.
+  Max 24 h per function call (default 5 min). GPU functions can be preempted (interrupt signal,
+  grace period not documented, then restart on the same input). Volume writes are seen by other
+  containers only after a commit plus reload; atomic rename and fsync on Volumes are not documented.
+- `[finding]` H100 is cheaper per FLOP than A100 on Modal: $3.949 / 989 TFLOP/s vs $2.498 / 312 TFLOP/s
+  → $0.0040 vs $0.0080 per (PFLOP/s · h). H100 stays.
+- `[design]` Portability: the `alethic` package stays plain Python (no `modal` import). Modal is one
+  launcher, `deploy/modal_app.py`: image from `requirements.txt` on Python 3.12, Volume `alethic-data`
+  (v2) at `/data` = `ALETHIC_DATA_DIR`, functions for tests, a Volume probe and H100 training
+  (`--resume auto`, 24 h timeout, 2 retries, `--max-cost` required). Vast.ai later runs the same CLI.
+- `[design]` Training price in `configs/train.yaml`: H100 3.949 + 4 cores × 0.0472 + 32 GiB × 0.0080 =
+  **$4.39/h** (was a $3.00 placeholder).
+- `[setup]` `modal` 1.6.3 installed in the laptop venv (an optional `deploy` extra in pyproject).
+  Not logged in yet (`python -m modal setup` needs the owner's browser).
+- `[finding]` Projected costs on Modal at an assumed 30% MFU (M4 measures the real number).
+  Throughput = 0.30 × 989e12 / 3.025e9 = 98,080 tokens/s = 0.668 s per 65,536-token step.
+
+  | Milestone | Work | Estimate |
+  | --- | --- | --- |
+  | M1 tokenizer | 16 cores + 128 GiB = $1.78/h, about 1–1.5 h | $1.8–2.7 |
+  | M2 speed test | 4 cores + 16 GiB = $0.32/h, under 1 h | about $0.3 |
+  | M3a 1B subset | measured in M2 | about $2 |
+  | M4 smoke | 2 × 2,000 steps × 0.668 s = 0.74 h + about 0.25 h startup, × $4.39 | about $4.4 |
+  | M5 LR sweep | 600M tokens / 98,080 = 1.70 h + 0.5 h startup, × $4.39 | about $9.7 |
+  | **M1–M5 total** | | **about $18–19 of the $30** |
+  | M6 1B pair | 2e9 / 98,080 = 5.67 h × $4.39 | about $25 (does not fit; Vast.ai) |
+  | M7 6B pair | 1.2e10 / 98,080 = 34.0 h × $4.39 | about $149 on Modal; Vast.ai price TBD |
+
+- `[next]` Owner: run `python -m modal setup`; set a spending limit in Modal's settings so nothing is
+  charged past the free credits; create a Modal Secret named `huggingface` with `HF_TOKEN` (needed
+  from M1). Then approve the two smoke checks (`tests`, `probe`, about $0.02 together).
+- `[next]` Open question for the Vast.ai move: how the shards get from the Modal Volume to Vast.ai
+  (about 12 GB of shards plus raw data). Owner approves the transfer when the time comes.

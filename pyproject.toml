@@ -19,6 +19,10 @@ dependencies = [
     "pytest",
 ]
 
+[project.optional-dependencies]
+# Laptop-only launcher for Modal (deploy/modal_app.py). The alethic package never imports it.
+deploy = ["modal==1.6.3"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

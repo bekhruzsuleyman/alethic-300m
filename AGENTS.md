@@ -20,7 +20,7 @@ it before building anything.
 | Milestone | Status |
 | --- | --- |
 | M0 repo skeleton, model, loader, all tests (laptop CPU) | **Done**: 30/30 tests pass |
-| M1 tokenizer on Hetzner CCX53 | Not started; waiting for the owner's go |
+| M1 tokenizer on Modal CPU | Not started; waiting for the owner's go |
 | M2 – M8 | Not started |
 
 Update this table when a milestone's gate is passed.
@@ -31,7 +31,9 @@ Update this table when a milestone's gate is passed.
    owner** before the next milestone.
 2. **Ask before you:** spend money (rent a server, start a GPU), upload anything (data, checkpoints,
    `git push`), choose the other-code languages, or change any decision below.
-3. **Never** print, log or commit `HF_TOKEN` or any credential. The pipeline writes only to local disk.
+3. **Never** print, log or commit `HF_TOKEN` or any credential. The pipeline writes only to the
+   machine's own disk (on Modal: the private Volume `alethic-data`). Moving data between providers
+   (Modal → Vast.ai) is an upload: the owner approves it first.
 4. **Never relax a gate** to make it pass. If a gate fails, report the cause and the numbers.
 5. **Verify, don't assume.** Check the installed SentencePiece version for every option, and the real
    subset and column names of every dataset. Report what you find.
@@ -39,14 +41,18 @@ Update this table when a milestone's gate is passed.
    time) and a tokenizer hash mismatch must stop the program with a message saying what to do.
 7. **Keep it small and readable.** Each file under 300 lines, type hints on public functions, plain
    comments on every function (the owner learns by reading the code). Dependencies are only: torch,
-   numpy, pyarrow, sentencepiece, regex, huggingface_hub, pyyaml, pytest.
+   numpy, pyarrow, sentencepiece, regex, huggingface_hub, pyyaml, pytest. `modal` is allowed only in
+   `deploy/modal_app.py` (laptop launcher); the `alethic` package must never import it.
 8. **Be deterministic.** Seeds live in the configs; same inputs give the same outputs.
 9. **Record everything.** Add to `LOG.md` as you work (see its conventions) and add a section to
    `docs/RUN_RECORD.md` at every milestone: commands, config and tokenizer hashes, measured speeds,
    costs, surprises.
-10. **At every stop, say which rented servers are still running.** Hetzner bills until a server is
-    deleted, even when powered off; remind the owner to download results first, then delete it.
-11. **Reports use numbers and worked math**, not long prose. The owner prefers that.
+10. **At every stop, say what is still running or billing**: Modal apps/containers (check
+    `modal app list`) and, later, Vast.ai instances. Vast.ai bills storage while an instance exists,
+    even when stopped; remind the owner to download results first, then destroy it. Report Modal
+    credits spent against the $30/month free allowance.
+11. **Every GPU run gets `--max-cost`.** The Modal launcher refuses to start training without it.
+12. **Reports use numbers and worked math**, not long prose. The owner prefers that.
 
 ## Locked decisions
 
@@ -65,7 +71,7 @@ the owner's approval.
 | SGCA | `C = (W·H + b) ⊙ (alpha ⊙ sin(A))`, `A = o_proj(GQA(H))`, `X' = X + C`; alpha is a vector of length 1,024 starting at 1.0 |
 | Training | 65,536 tokens per step, 91,553 steps, AdamW (0.9, 0.95), wd 0.1 on matrices only, LR 4e-4 peak, 1,000 warmup, cosine to 4e-5, clip 1.0, bf16 + torch.compile, no activation checkpointing |
 | Data order | One pass, global seeded shuffle of 4,096-token windows, no cross-document masking |
-| Machines | Hetzner CCX53 for data work, one H100 80 GB for training, laptop for tests only |
+| Machines | **Changed by the owner on 2026-11-09:** Modal (CPU and H100) while the $30/month free Starter credits last, then Vast.ai. Laptop for tests and launching only. Hetzner is no longer used |
 
 ## Commands
 
@@ -73,7 +79,15 @@ the owner's approval.
 python -m alethic tokenizer-build | data-fetch | data-build | train | eval
 python -m alethic train --model configs/model_sgca.yaml --train configs/train.yaml --resume auto --max-cost 40
 python -m pytest -v
+
+# Modal (from the repo root, after `python -m modal setup`; each call spends credits)
+modal run deploy/modal_app.py::tests      # test suite on Linux, about $0.01
+modal run deploy/modal_app.py::probe      # Volume rename/fsync/commit check, < $0.01
+modal run deploy/modal_app.py::train --model sgca --max-cost 5 --stop-step 2000
 ```
+
+On Modal, `ALETHIC_DATA_DIR=/data` is the Volume `alethic-data` (v2). On Vast.ai, clone the repo,
+`pip install -r requirements.txt -e .`, set `ALETHIC_DATA_DIR`, and run the same CLI.
 
 Only `train` is implemented so far; the others print which milestone builds them. Large files go
 under `$ALETHIC_DATA_DIR`; paths in the configs are relative to it.
@@ -89,6 +103,7 @@ under `$ALETHIC_DATA_DIR`; paths in the configs are relative to it.
 | `src/alethic/model/` | `layers.py`, `attention_gqa.py`, `attention_sgca.py`, `transformer.py`, `params.py` |
 | `src/alethic/train/` | `loop.py`, `optim.py`, `checkpoint.py`, `cost.py` |
 | `src/alethic/eval/` | `bpb.py` (formula only so far), `humaneval.py` (stub) |
+| `deploy/modal_app.py` | Modal launcher: image, Volume, tests, Volume probe, H100 training with retries |
 | `tests/` | one file per area; `conftest.py` trains a tiny 1,024-id tokenizer with the real settings |
 
 ## Traps already found (don't fall into them again)
@@ -105,6 +120,12 @@ under `$ALETHIC_DATA_DIR`; paths in the configs are relative to it.
   (Python 3.12.10). Set `PYTHONIOENCODING=utf-8` when printing pieces to the Windows console.
 - **pytest temp folder:** if the default temp folder is blocked (sandboxes), pass `--basetemp <dir>`.
 - **`.gitignore`** uses `/data/` (root only). A bare `data/` would hide `src/alethic/data/`.
+- **Modal specifics** (docs, 2026-11-09): writes reach other containers only after a commit (background
+  commits every few seconds, `volume.commit()`, final commit at shutdown) and a reader must
+  `volume.reload()`. Many containers may write *different* files at once; never let two write the same
+  file (so a parallel data build needs one coordinator writing `state.jsonl`). Max 24 h per call;
+  GPU functions can be preempted (an interrupt signal, then a restart of the same input). Atomic
+  rename on Volumes is not documented: run the `probe` before trusting crash safety there.
 - **SIGTERM** is how rented GPUs vanish; the loop saves a checkpoint on SIGTERM/SIGINT and every 500 steps.
 
 ## Git

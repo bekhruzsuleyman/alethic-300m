@@ -27,7 +27,9 @@ log_every: 100
 eval_every: 1000          # periodic validation BPB (needs validation shards, M2+)
 
 cost:
-  price_per_hour: 3.0     # USD; set to the real rental price before M4
+  # USD per hour of the whole training container. Modal (2026-11-09): H100 3.949 + 4 cores x 0.0472
+  # + 32 GiB x 0.0080 = 4.39. Change it to the real price when moving to Vast.ai.
+  price_per_hour: 4.39
   peak_flops: 989.0e12    # H100 SXM dense bf16, used for model FLOP utilization
 
 paths:
