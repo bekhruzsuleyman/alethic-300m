@@ -245,3 +245,39 @@ Numbers are exact where they were measured. Times are local (UTC+5).
   `.venv/Scripts/python`). Token saved to `~/.modal.toml`, workspace `bekhruzsuleyman`.
 - `[setup]` Modal Secret `huggingface` exists (created 20:27 by the owner). `probe_write` now requires the
   key `HF_TOKEN` and reports only whether it is present. No Modal apps running; $0 spent.
+
+### Owner: "don't waste credits on tests; run the real workload; checkpoints must not bottleneck" (20:40)
+
+- `[decision]` No separate test runs on Modal; tests run free on the laptop. The real job is the check.
+- `[design]` **Async checkpoints.** A 302M checkpoint is 1.21 GB weights + 2.42 GB Adam moments
+  = 3.6 GB. Before: the GPU waited for serialise + SHA-256 + write (about 5–10 s every 500 steps
+  = 5.6 min at 30% MFU). Now: snapshot to CPU memory (about 1 s), then a background thread
+  serialises, hashes, renames atomically and prunes while training continues; the next save (and
+  the program exit) first waits for it. Final, max-cost and signal saves are blocking.
+- `[design]` **No per-step GPU sync.** The loss was read with `float()` every step; now the step losses
+  stay on the GPU and are read once per log interval (100 steps).
+- `[finding]` Free metadata checks from the laptop (2026-11-09):
+  - Pinned revisions: starcoderdata `9fc30b57`, fineweb-edu `87f09149`, open-web-math `fde8ef8d`,
+    fineweb-2 `af9c1333`, humaneval `7dce6050`, mbpp `4bb6404f` (full hashes in data.yaml).
+  - StarCoderData: 92 folders. Candidate languages (parquet GB): shell 1.52, javascript 24.91,
+    typescript 10.50, c 19.10, cpp 16.42, rust 2.88, go 8.09; python 23.16 in 59 files.
+    **Files are gated: 403 "not in the authorized list"** — the owner must accept the terms.
+  - FineWeb-Edu has 6 `CC-MAIN-2025-*` configs (05, 08, 13, 18, 21, 26), 50 files each.
+    OpenWebMath 114 files, 27.43 GB. FineWeb-2 `uzn_Latn/train` 1 file, 2.04 GB, 1,233,463 rows;
+    `uzn_Cyrl/train` 1 file, 1.97 GB, 1,357,811 rows; both also have a small `test` split.
+  - Columns: FineWeb-Edu `text`, `id`, `url`, …; OpenWebMath `url`, `text`, `date`, `metadata`;
+    FineWeb-2 `text`, `id`, `url`, …, `language_script`; HumanEval `prompt`, `canonical_solution`, …;
+    MBPP `text`, `code`, …. Parquet row groups hold about 1,000 rows.
+- `[design]` M1 pipeline: `tokenizer-build` = sample → train → eval → freeze, each stage skipped if its
+  output exists. Sample streams (each source; other code per language) are saved one by one, so a
+  partial run is never redone. Held-out docs (2,000 per source) are taken before sampling and
+  never enter the sample. CPU stages use a torch-free Modal image.
+- `[finding]` sentencepiece 0.2.3 removed `out_type="immutable_proto"`; `return_type="proto"` gives
+  pieces with byte offsets into the original text (used for the indentation rule).
+- `[test]` 34 tests pass on the laptop (19.5 s). End-to-end on real data (FineWeb-2 Uzbek `test`
+  files, 6 MB sample, 2,000-id vocab): 1.1 min; Uzbek cleaning changed 68,592 Latin and 155 Cyrillic
+  characters; round trip 100% on both; freeze correctly blocked (no Python → indentation gate; tiny
+  vocab → Uzbek over 3.0 tokens/word).
+- `[cost]` Owner approved running. Launched on Modal (detached): `tokenizer_sample` for
+  `fineweb_edu, math, uzbek_latn, uzbek_cyrl` on 2 cores + 16 GiB ($0.22/h). Python and other-code
+  streams wait for StarCoderData access and the owner's approval of the language list.

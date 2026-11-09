@@ -20,7 +20,7 @@ it before building anything.
 | Milestone | Status |
 | --- | --- |
 | M0 repo skeleton, model, loader, all tests (laptop CPU) | **Done**: 30/30 tests pass |
-| M1 tokenizer on Modal CPU | Not started; waiting for the owner's go |
+| M1 tokenizer on Modal CPU | **In progress**: code done; non-code sample streams running on Modal; Python/other-code streams wait for StarCoderData access + language approval |
 | M2 – M8 | Not started |
 
 Update this table when a milestone's gate is passed.
@@ -84,12 +84,17 @@ python -m pytest -v
 modal run deploy/modal_app.py::tests      # test suite on Linux, about $0.01
 modal run deploy/modal_app.py::probe      # Volume rename/fsync/commit check, < $0.01
 modal run deploy/modal_app.py::train --model sgca --max-cost 5 --stop-step 2000
+modal run --detach deploy/modal_app.py::tokenizer_sample --streams fineweb_edu,math   # M1 streams, 2 cores
+modal run --detach deploy/modal_app.py::tokenizer_train                              # M1 merge+train+eval+freeze, 16 cores
 ```
+
+On Windows prefix Modal commands with `PYTHONUTF8=1 PYTHONIOENCODING=utf-8` and call
+`.venv/Scripts/python -m modal ...` (bash strips backslashes).
 
 On Modal, `ALETHIC_DATA_DIR=/data` is the Volume `alethic-data` (v2). On Vast.ai, clone the repo,
 `pip install -r requirements.txt -e .`, set `ALETHIC_DATA_DIR`, and run the same CLI.
 
-Only `train` is implemented so far; the others print which milestone builds them. Large files go
+`train` and `tokenizer-build` are implemented; the others print which milestone builds them. Large files go
 under `$ALETHIC_DATA_DIR`; paths in the configs are relative to it.
 
 ## Repo map
@@ -98,8 +103,8 @@ under `$ALETHIC_DATA_DIR`; paths in the configs are relative to it.
 | --- | --- |
 | `configs/` | `tokenizer.yaml`, `data.yaml`, `model_sgca.yaml`, `model_gqa.yaml`, `train.yaml` |
 | `src/alethic/config.py` | YAML loading, placeholder check, `ALETHIC_DATA_DIR`, hashing, atomic JSON |
-| `src/alethic/tokenizer/` | `train.py` (options + `▁` escape), `codec.py`, `specials.py`, `freeze.py`; `evaluate.py` is an M1 stub |
-| `src/alethic/data/` | `shards.py` (crash-safe shards, `state.jsonl`), `loader.py`, `uzbek.py`, `encode.py` (`is_validation`); `fetch`/`dedup`/`decontam` are M2 stubs |
+| `src/alethic/tokenizer/` | `train.py` (options + `▁` escape), `codec.py`, `specials.py`, `freeze.py`, `sample.py` (resumable weighted sample), `evaluate.py` (gates), `build.py` (stages) |
+| `src/alethic/data/` | `shards.py` (crash-safe shards, `state.jsonl`), `loader.py`, `uzbek.py`, `encode.py` (`is_validation`), `fetch.py` (pinned downloads, document reader); `dedup`/`decontam` are M2 stubs |
 | `src/alethic/model/` | `layers.py`, `attention_gqa.py`, `attention_sgca.py`, `transformer.py`, `params.py` |
 | `src/alethic/train/` | `loop.py`, `optim.py`, `checkpoint.py`, `cost.py` |
 | `src/alethic/eval/` | `bpb.py` (formula only so far), `humaneval.py` (stub) |
@@ -126,6 +131,9 @@ under `$ALETHIC_DATA_DIR`; paths in the configs are relative to it.
   file (so a parallel data build needs one coordinator writing `state.jsonl`). Max 24 h per call;
   GPU functions can be preempted (an interrupt signal, then a restart of the same input). Atomic
   rename on Volumes is not documented: run the `probe` before trusting crash safety there.
+- **Checkpoints are written in a background thread** (`AsyncSaver`). Never read model state while a
+  save runs except through `to_cpu` snapshots; always `saver.wait()` before exit.
+- **Don't call `.item()` / `float()` on GPU tensors every step**; it stalls the GPU. Read at log steps.
 - **SIGTERM** is how rented GPUs vanish; the loop saves a checkpoint on SIGTERM/SIGINT and every 500 steps.
 
 ## Hugging Face
