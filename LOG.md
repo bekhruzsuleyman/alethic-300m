@@ -296,3 +296,18 @@ Numbers are exact where they were measured. Times are local (UTC+5).
 - `[cost]` Launched `modal run --detach deploy/modal_app.py::tokenizer_all`: all 12 sample streams on
   2 cores + 16 GiB ($0.22/h), then merge + SentencePiece (32 threads) + eval + freeze on
   16 cores + 128 GiB ($1.78/h).
+- `[bug]` Second startup failure (seconds, cost close to $0): `cli.main` imported the training error
+  classes, which import torch; the CPU image has no torch. Fix: those imports are optional in
+  `main`. New test `test_no_torch.py` runs the CLI with torch blocked. 35 tests pass. Relaunched.
+
+### M1 run 2 progress (to 21:46)
+
+- `[finding]` Sample stage 3.4 min: 12 streams, 2.0 GB, exact mix (python 733.3 MB, other code 7 × ~47.6 MB,
+  FineWeb-Edu 566.7 MB, math 166.7 MB, uzbek_latn 133.3 MB, uzbek_cyrl 66.7 MB). Long lines dropped:
+  math 619, fineweb_edu 33, uzbek_latn 13, uzbek_cyrl 6, code 0.
+- `[finding]` SentencePiece: 1,927,141,995 chars, alphabet 14,614, 31,309,048 sentences; seed extraction
+  6 chunks, 1,014,614 seeds, about 12 min, mostly single-threaded. EM uses 32 threads = 32 physical
+  cores billed against a 16-core request (Modal allows request + 16). Memory used about 10–15 GiB of
+  128 GiB requested. → Next CPU jobs: hard limit `cpu=(n, n)` and memory near the measured peak.
+- `[finding]` EM sizes: 900,691 → 451,187 → 429,110 → 321,789 → 241,251 → 180,904 (at 21:46);
+  rounds about 7–10 min each. Still running (detached); eval + freeze follow automatically.
