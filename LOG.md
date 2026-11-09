@@ -167,8 +167,8 @@ Numbers are exact where they were measured. Times are local (UTC+5).
 
 - `[git]` Repo: https://github.com/bekhruzsuleyman/alethic-300m (`main`).
 - `[git]` 19:11 `571300c` M0: repo skeleton, model, loader and all tests — **pushed** (owner asked).
-- `[git]` 19:20 `cff337f` `▁` escape · 19:20 `52f9ec7` wording · 19:21 `5e7db2a` specials decision —
-  committed locally, not pushed yet.
+- `[git]` 19:20 `cff337f` `▁` escape · 19:20 `52f9ec7` wording · 19:21 `5e7db2a` specials decision ·
+  `ac9be0f` LOG.md and AGENTS.md — all pushed to `main` (owner asked).
 
 ### Cost
 
