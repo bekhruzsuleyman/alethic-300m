@@ -128,33 +128,41 @@ def train_remote(model: str, max_cost: float | None, stop_step: int | None, run_
         volume.commit()
 
 
-@app.function(image=image, gpu="H100", cpu=4, memory=32768, timeout=6 * 3600, volumes={DATA: volume},
-              retries=modal.Retries(max_retries=2, initial_delay=30.0, backoff_coefficient=1.0))
-def m5_sweep_remote(max_cost_per_run: float = 1.5) -> dict:
-    """M5: 100M tokens (1,526 steps, warmup 76) x LR {2e-4, 4e-4, 8e-4} x {sgca, gqa} in one H100 session."""
-    import json
-    import shutil
+@app.function(image=image, gpu="H100", cpu=4, memory=32768, timeout=8 * 3600, volumes={DATA: volume},
+              secrets=[hf_secret], retries=modal.Retries(max_retries=2, initial_delay=30.0, backoff_coefficient=1.0))
+def m6_pair_remote(max_cost_per_run: float = 10.5) -> dict:
+    """M6: 1B tokens (15,259 steps, warmup 763, LR 4e-4) matched pair (sgca then gqa) with intentional
+    step-1000 stop/resume test on sgca, 500-step Volume checkpoints, and immediate HF backup after each run."""
     from alethic import cli
+    from alethic.train import checkpoint as ckpt
     volume.reload()
     def _commit(folder: Path) -> None:
+        print(f"[m6] committing checkpoint {folder.name} to Volume", flush=True)
         volume.commit()
     results = {}
     for model in ("sgca", "gqa"):
-        for tag, lr in (("2e4", 2e-4), ("4e4", 4e-4), ("8e4", 8e-4)):
-            name = f"m5_{model}_lr{tag}"
-            val_log = Path(DATA) / "runs" / name / "val_log.jsonl"
-            if val_log.is_file() and any('"step": 1526' in ln for ln in val_log.read_text().splitlines()):
-                print(f"[m5] {name} already completed; skipping", flush=True)
-                continue
-            args = ["train", "--model", f"{REMOTE}/configs/model_{model}.yaml",
-                    "--train", f"{REMOTE}/configs/train.yaml", "--resume", "auto",
-                    "--run-name", name, "--steps", "1526", "--warmup-steps", "76",
-                    "--peak-lr", str(lr), "--max-cost", str(max_cost_per_run)]
-            code = cli.main(args, on_checkpoint=_commit)
-            if code == 0 and val_log.is_file():
-                shutil.rmtree(Path(DATA) / "runs" / name / "checkpoints", ignore_errors=True)
+        name = f"m6_{model}"
+        run_dir = Path(DATA) / "runs" / name
+        val_log = run_dir / "val_log.jsonl"
+        if val_log.is_file() and any('"step": 15259' in ln for ln in val_log.read_text().splitlines()):
+            print(f"[m6] {name} already completed; skipping", flush=True)
+            continue
+        base_args = ["train", "--model", f"{REMOTE}/configs/model_{model}.yaml",
+                     "--train", f"{REMOTE}/configs/train.yaml", "--resume", "auto",
+                     "--run-name", name, "--steps", "15259", "--warmup-steps", "763",
+                     "--peak-lr", "0.0004", "--max-cost", str(max_cost_per_run)]
+        if model == "sgca" and ckpt.latest_checkpoint(run_dir / "checkpoints") is None:
+            print("[m6] testing intentional stop at step 1000 before resuming m6_sgca", flush=True)
+            cli.main([*base_args, "--stop-step", "1000"], on_checkpoint=_commit)
             volume.commit()
-            results[name] = code
+        code = cli.main(base_args, on_checkpoint=_commit)
+        volume.commit()
+        results[name] = code
+        if code == 0:
+            try:
+                backup_runs_to_hf.local(name)
+            except Exception as err:
+                print(f"[m6] HF backup warning for {name}: {err}", flush=True)
     return results
 
 
@@ -268,13 +276,9 @@ def data_build(target_scale: float = 0.1667, workers: int = 16, spawn: bool = Fa
 
 
 @app.local_entrypoint()
-def m5_sweep(spawn: bool = False) -> None:
-    """modal run --detach deploy/modal_app.py::m5_sweep --spawn"""
-    if spawn:
-        call = m5_sweep_remote.spawn()
-        print("spawned m5_sweep_remote:", call.object_id)
-    else:
-        print(m5_sweep_remote.remote())
+def m6_pair(spawn: bool = False) -> None:
+    """modal run --detach deploy/modal_app.py::m6_pair --spawn"""
+    print("spawned m6_pair_remote:", m6_pair_remote.spawn().object_id) if spawn else print(m6_pair_remote.remote())
 
 
 @app.local_entrypoint()

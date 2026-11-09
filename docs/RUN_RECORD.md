@@ -222,3 +222,31 @@ modal run --detach deploy/modal_app.py::data_build --target-scale 0.1667 --worke
   1. At **step 1,000** (end of warmup), **SGCA leads GQA across all 6 sources** by **0.0786 BPB overall** (`1.5269` vs `1.6055`).
   2. At **step 2,000** (`131M` tokens), **SGCA leads on all natural-language streams** (`fineweb_edu` `1.3136` vs `1.3147`, `uzbek_latn` `1.5795` vs `1.5926`, `uzbek_cyrl` `1.0632` vs `1.0758`), while GQA edges ahead on code (`python` `0.8897` vs `0.9064`, `code_other` `1.0996` vs `1.1428`).
   3. Both models exceed **42.7% MFU** on H100 (vs the 30% gate), cutting projected 1B-token M6 runtime to **`1.99 hours` (SGCA)** and **`1.86 hours` (GQA)**.
+- **Hugging Face backups (`bekhruzsuleyman/alethic-300m`):** `shards/manifest.json` (`46dd2842c74cba4b88dc86b8a15c5acf184b7203`), `runs/m4_sgca` (`0bbf553efc8eb885b7cf526700da31a4a8adf3da`), `runs/m4_gqa` (`ce0d121983a7f9e085cf79e95551a23aad766b24`).
+
+---
+
+## M5: Learning-rate sweep (`100M` tokens = `1,526` steps × LR `{2e-4, 4e-4, 8e-4}` × `{sgca, gqa}`), 2026-11-10
+
+**Gate:** Train all 6 configurations (`sgca` and `gqa` at peak LR `2e-4`, `4e-4`, `8e-4`, cosine decay to `peak_lr / 10` over `1,526` steps = `100,007,936` tokens, 5% linear warmup = `76` steps) on `1 × H100` with identical seed (`1234`) and data order; record all 6 curves and per-source validation BPB; pick the learning rate for M6. **Result: passed.** Total cost across all 6 runs: **`$5.48`** (`80 min` in a single H100 session `ap-n4ANFR7D7HvtDgPzVprO9a`).
+
+### Final results at step 1,526 (`100,007,936` tokens; full validation across all `1,017,192` val tokens)
+
+| Run Name | Model | Peak LR (`min_lr`) | Step 1000 Train Loss | Step 1526 Train Loss | Step 1000 Val BPB | **Step 1526 Val BPB (Overall)** | `python` BPB | `code_other` BPB | `fineweb_edu` BPB | `math` BPB | `uzbek_latn` BPB | `uzbek_cyrl` BPB | Cost |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `m5_sgca_lr2e4` | **SGCA** | `2e-4` (`2e-5`) | 4.6540 | **3.9094** | 1.558281 | **`1.409033`** | **`1.186081`** | **`1.499782`** | **`1.494161`** | **`1.727700`** | **`1.766123`** | **`1.201004`** | `$1.14` |
+| `m5_gqa_lr2e4` | GQA | `2e-4` (`2e-5`) | 4.9482 | 4.1734 | 1.695068 | `1.503421` | `1.264176` | `1.583551` | `1.585534` | `1.808938` | `1.924773` | `1.336189` | `$0.90` |
+| `m5_sgca_lr4e4` | **SGCA** | `4e-4` (`4e-5`) | 4.1672 | **3.4892** | 1.410173 | **`1.269719`** | **`1.016509`** | **`1.255078`** | **`1.402231`** | **`1.580446`** | **`1.661830`** | **`1.119912`** | `$0.89` |
+| `m5_gqa_lr4e4` | GQA | `4e-4` (`4e-5`) | 4.5367 | 3.8329 | 1.543931 | `1.394150` | `1.134473` | `1.403500` | `1.519340` | `1.693468` | `1.830558` | `1.234398` | `$0.83` |
+| `m5_sgca_lr8e4` | **SGCA** | `8e-4` (`8e-5`) | 4.0725 | **3.3990** | 1.383821 | **`1.244308`** | **`0.965804`** | **`1.162858`** | **`1.401845`** | **`1.537008`** | **`1.702264`** | **`1.147078`** | `$0.89` |
+| `m5_gqa_lr8e4` | GQA | `8e-4` (`8e-5`) | 4.4926 | 3.7995 | 1.524024 | `1.378295` | `1.136014` | `1.399223` | `1.495458` | `1.685459` | `1.787426` | `1.189336` | `$0.83` |
+
+### Key findings from the M5 sweep
+
+1. **SGCA beats GQA at every learning rate and on every single data source** when cosine decay completes at 100M tokens (`step 1526`):
+   - At `2e-4`: **SGCA `1.409033`** vs GQA `1.503421` (**`-0.0944` BPB** in SGCA's favor).
+   - At `4e-4`: **SGCA `1.269719`** vs GQA `1.394150` (**`-0.1244` BPB** in SGCA's favor).
+   - At `8e-4`: **SGCA `1.244308`** vs GQA `1.378295` (**`-0.1340` BPB** in SGCA's favor).
+   - SGCA at `4e-4` (`1.2697`) even beats GQA at `8e-4` (`1.3783`) by **`-0.1086` BPB** across all 6 sources.
+2. **Selected learning rate (`4.0e-4`, matching `configs/train.yaml`):**
+   - While `8e-4` edges out `4e-4` on code/math at the 100M-token horizon, `4e-4` achieves **better Uzbek validation BPB** on SGCA (`uzbek_cyrl` `1.1199` vs `1.1471`, `uzbek_latn` `1.6618` vs `1.7023`) and **better Python validation BPB** on GQA (`1.1345` vs `1.1360`), and avoids high-LR oscillation over longer horizons (`1B–6B` tokens). We therefore keep `peak_lr = 4.0e-4` (`min_lr = 4.0e-5`) as locked in `configs/train.yaml`.

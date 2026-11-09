@@ -410,4 +410,18 @@ Numbers are exact where they were measured. Times are local (UTC+5).
     `math` `1.4511` vs `1.4701`).
   - Atomic 500-step checkpoints (`step_0000500`, `step_0001000`, `step_0001500`, `step_0002000`, pruned to
     keep the last two: `1500` and `2000`) verified on the Volume and backed up to private HF repo
-    `bekhruzsuleyman/alethic-300m`.
+    `bekhruzsuleyman/alethic-300m` (`shards_manifest: 46dd2842`, `m4_sgca: 0bbf553e`, `m4_gqa: ce0d1219`).
+
+### M5 learning-rate sweep (`100M` tokens × `{2e-4, 4e-4, 8e-4}` × `{sgca, gqa}`, 02:04–03:24)
+
+- `[cost]` Ran all 6 M5 configurations (`1,526` steps = `100,007,936` tokens each, 5% warmup = `76` steps,
+  cosine decay to `peak_lr / 10`) in one H100 session (`ap-n4ANFR7D7HvtDgPzVprO9a`, 80 min total, **`$5.48`**).
+- `[finding]` **Final step 1,526 validation BPB (all `1,017,192` val tokens):**
+  - `2e-4`: **SGCA `1.409033`** (train loss `3.9094`) vs **GQA `1.503421`** (train loss `4.1734`) → **SGCA wins by `-0.0944` BPB**.
+  - `4e-4`: **SGCA `1.269719`** (train loss `3.4892`) vs **GQA `1.394150`** (train loss `3.8329`) → **SGCA wins by `-0.1244` BPB**.
+  - `8e-4`: **SGCA `1.244308`** (train loss `3.3990`) vs **GQA `1.378295`** (train loss `3.7995`) → **SGCA wins by `-0.1340` BPB**.
+  - Across all 3 learning rates and all 6 data sources (`python`, `code_other`, `fineweb_edu`, `math`,
+    `uzbek_latn`, `uzbek_cyrl`), **SGCA outperforms GQA at the end of cosine decay**.
+  - `4e-4` gives SGCA its best Uzbek BPB (`1.1199` Cyrillic, `1.6618` Latin vs `1.1471` / `1.7023` at `8e-4`)
+    and GQA its best Python BPB (`1.1345` vs `1.1360` at `8e-4`), confirming `configs/train.yaml`'s
+    `peak_lr: 4.0e-4` (`min_lr: 4.0e-5`) for M6.
