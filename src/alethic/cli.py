@@ -99,12 +99,18 @@ def main(argv: list[str] | None = None) -> int:
     from alethic.data.loader import LoaderError
     from alethic.tokenizer.freeze import FrozenError
     from alethic.tokenizer.specials import SpecialsError
-    from alethic.train.checkpoint import CheckpointError
-    from alethic.train.loop import TrainError
+
+    known: list[type[BaseException]] = [ConfigError, FrozenError, LoaderError, SpecialsError]
+    try:   # the training errors need torch, which the data/tokenizer machines do not install
+        from alethic.train.checkpoint import CheckpointError
+        from alethic.train.loop import TrainError
+        known += [CheckpointError, TrainError]
+    except ImportError:
+        pass
 
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (ConfigError, FrozenError, LoaderError, SpecialsError, CheckpointError, TrainError) as err:
+    except tuple(known) as err:
         print(f"error: {err}", file=sys.stderr)
         return 1
