@@ -112,6 +112,11 @@ def train_remote(model: str, max_cost: float | None, stop_step: int | None, run_
     continues from the last checkpoint on the Volume."""
     from alethic import cli
     volume.reload()
+
+    def _commit(folder: Path) -> None:
+        print(f"[modal] committing checkpoint {folder.name} to Volume", flush=True)
+        volume.commit()
+
     args = ["train", "--model", f"{REMOTE}/configs/model_{model}.yaml",
             "--train", f"{REMOTE}/configs/train.yaml", "--resume", "auto"]
     if max_cost is not None:
@@ -121,7 +126,27 @@ def train_remote(model: str, max_cost: float | None, stop_step: int | None, run_
     if run_name:
         args += ["--run-name", run_name]
     try:
-        return cli.main(args)
+        return cli.main(args, on_checkpoint=_commit)
+    finally:
+        volume.commit()
+
+
+@app.function(image=cpu_image, cpu=16, memory=32768, timeout=6 * 3600, volumes={DATA: volume},
+              secrets=[hf_secret], retries=modal.Retries(max_retries=2, initial_delay=10.0, backoff_coefficient=1.0))
+def data_build_remote(target_scale: float = 0.1667, workers: int = 16) -> int:
+    """M2/M3: hash, dedup, decontaminate, and encode shards in parallel with Volume checkpoints.
+    16 physical cores (32 vCPU) + 32 GiB = 16 x 0.0472 + 32 x 0.0080 = $1.01/h."""
+    from alethic import cli
+    volume.reload()
+
+    def _commit(tag: str) -> None:
+        print(f"[modal] committing data-build checkpoint: {tag}", flush=True)
+        volume.commit()
+
+    args = ["data-build", "--data", f"{REMOTE}/configs/data.yaml",
+            "--target-scale", str(target_scale), "--workers", str(workers)]
+    try:
+        return cli.main(args, on_checkpoint=_commit)
     finally:
         volume.commit()
 
@@ -138,15 +163,27 @@ def tok_sample(streams: str) -> int:
         volume.commit()
 
 
-@app.function(image=cpu_image, cpu=16, memory=131072, timeout=6 * 3600, volumes={DATA: volume},
-              secrets=[hf_secret])
+@app.function(image=cpu_image, cpu=16, memory=32768, timeout=6 * 3600, volumes={DATA: volume},
+              secrets=[hf_secret], retries=modal.Retries(max_retries=2, initial_delay=10.0, backoff_coefficient=1.0))
 def tok_train() -> int:
-    """M1 steps 2-4: merge the sample, train SentencePiece on 32 threads, evaluate, freeze.
-    16 physical cores (32 vCPU) + 128 GiB = 16 x 0.0472 + 128 x 0.0080 = $1.78/h."""
-    from alethic import cli
+    """M1 steps 2-4: merge the sample, train SentencePiece on 32 threads with EM checkpoints, evaluate, freeze.
+    16 physical cores (32 vCPU) + 32 GiB (measured peak 10-15 GiB) = 16 x 0.0472 + 32 x 0.0080 = $1.01/h."""
+    from alethic.config import load_config
+    from alethic.tokenizer import build
     volume.reload()
+
+    def _commit(tag: str) -> None:
+        print(f"[modal] committing volume checkpoint: {tag}", flush=True)
+        volume.commit()
+
     try:
-        return cli.main(["tokenizer-build", "--stage", "all", "--threads", "32"])
+        return build.run(
+            load_config(f"{REMOTE}/configs/tokenizer.yaml"),
+            load_config(f"{REMOTE}/configs/data.yaml"),
+            Path(f"{REMOTE}/configs/tokenizer.yaml"),
+            load_config(f"{REMOTE}/configs/train.yaml")["paths"]["specials"],
+            stage="all", threads=32, on_checkpoint=_commit,
+        )
     finally:
         volume.commit()
 
@@ -172,9 +209,13 @@ def tokenizer_all() -> None:
 
 
 @app.local_entrypoint()
-def tokenizer_train() -> None:
-    """modal run deploy/modal_app.py::tokenizer_train   (after every stream is built)"""
-    print("exit code", tok_train.remote())
+def tokenizer_train(spawn: bool = False) -> None:
+    """modal run --detach deploy/modal_app.py::tokenizer_train --spawn   (spawns and exits locally)"""
+    if spawn:
+        call = tok_train.spawn()
+        print("spawned tok_train:", call.object_id)
+    else:
+        print("exit code", tok_train.remote())
 
 
 @app.local_entrypoint()
@@ -193,11 +234,26 @@ def probe() -> None:
 
 
 @app.local_entrypoint()
-def train(model: str = "sgca", max_cost: float = 0.0, stop_step: int = 0, run_name: str = "") -> None:
-    """modal run deploy/modal_app.py::train --model sgca --max-cost 5 --stop-step 2000"""
+def data_build(target_scale: float = 0.1667, workers: int = 16, spawn: bool = False) -> None:
+    """modal run --detach deploy/modal_app.py::data_build --target-scale 0.1667 --spawn"""
+    if spawn:
+        call = data_build_remote.spawn(target_scale, workers)
+        print("spawned data_build_remote:", call.object_id)
+    else:
+        print("exit code", data_build_remote.remote(target_scale, workers))
+
+
+@app.local_entrypoint()
+def train(model: str = "sgca", max_cost: float = 0.0, stop_step: int = 0,
+          run_name: str = "", spawn: bool = False) -> None:
+    """modal run --detach deploy/modal_app.py::train --model sgca --max-cost 3 --stop-step 2000 --spawn"""
     if model not in ("sgca", "gqa"):
         raise SystemExit("--model must be sgca or gqa")
     if max_cost <= 0:
         raise SystemExit("set --max-cost (dollars) so a run can never spend more than you allow")
-    code = train_remote.remote(model, max_cost, stop_step or None, run_name or None)
-    print("exit code", code)
+    if spawn:
+        call = train_remote.spawn(model, max_cost, stop_step or None, run_name or None)
+        print("spawned train_remote:", call.object_id)
+    else:
+        code = train_remote.remote(model, max_cost, stop_step or None, run_name or None)
+        print("exit code", code)

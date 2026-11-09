@@ -20,8 +20,9 @@ it before building anything.
 | Milestone | Status |
 | --- | --- |
 | M0 repo skeleton, model, loader, all tests (laptop CPU) | **Done**: 30/30 tests pass |
-| M1 tokenizer on Modal CPU | **In progress**: code done; non-code sample streams running on Modal; Python/other-code streams wait for StarCoderData access + language approval |
-| M2 – M8 | Not started |
+| M1 tokenizer on Modal CPU | **Done**: 50,000-id Unigram trained, all gates passed (100% roundtrip, 100% indentation, Uzbek 2.17/2.55 tok/word), frozen (`28685edb...`), uploaded to HF (`4d3749af`) |
+| M2 / M3a data pipeline + 1B-token subset on Modal CPU | **In progress**: code & local tests done (39/39 pass); running on Modal CPU |
+| M4 – M8 | Next after M3a shards |
 
 Update this table when a milestone's gate is passed.
 

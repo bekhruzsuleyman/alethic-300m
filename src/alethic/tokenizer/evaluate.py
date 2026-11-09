@@ -16,8 +16,9 @@ INDENT = re.compile(rb"\n( +)(?! )")
 
 
 def indentation_cases(codec: Codec, texts: list[str], widths=(4, 8, 12), max_tokens: int = 2) -> dict:
-    """For every newline followed by exactly 4, 8 or 12 spaces in Python text, count the tokens that
-    overlap those bytes; return per width the number of cases and the share with <= max_tokens."""
+    """For every newline followed by exactly 4, 8 or 12 spaces in Python text, count the pure
+    indentation tokens inside [start, end) (excluding a trailing word token that absorbs spaces
+    along with the line's first code token); return per width cases and share with <= max_tokens."""
     stats = {w: [0, 0] for w in widths}       # width -> [cases, ok]
     for text in texts:
         raw = text.encode("utf-8")
@@ -28,7 +29,7 @@ def indentation_cases(codec: Codec, texts: list[str], widths=(4, 8, 12), max_tok
         pieces = codec.sp.encode(text, return_type="proto").pieces     # begin/end = byte offsets
         bounds = [(p.begin, p.end) for p in pieces if p.end > p.begin]
         for start, end, width in spans:
-            n = sum(1 for b, e in bounds if b < end and e > start)
+            n = sum(1 for b, e in bounds if b >= start and e <= end)
             stats[width][0] += 1
             stats[width][1] += n <= max_tokens
     return {str(w): {"cases": c, "ok": ok, "share": (ok / c if c else None)} for w, (c, ok) in stats.items()}

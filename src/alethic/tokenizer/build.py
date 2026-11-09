@@ -13,6 +13,7 @@ import json
 import shutil
 import time
 from pathlib import Path
+from typing import Callable
 
 from alethic.config import data_dir, resolve_path, write_json_atomic
 from alethic.data.fetch import iter_source
@@ -61,8 +62,9 @@ def stage_sample(tok_cfg: dict, data_cfg: dict, work: Path, size_bytes: int | No
     return report
 
 
-def stage_train(tok_cfg: dict, work: Path, tdir: Path, threads: int | None) -> Path:
-    """Train SentencePiece on work/sample.txt (skipped if the model exists)."""
+def stage_train(tok_cfg: dict, work: Path, tdir: Path, threads: int | None,
+                on_checkpoint: Callable[[str], None] | None = None) -> Path:
+    """Train SentencePiece on work/sample.txt with intermediate EM checkpoints (skipped if model exists)."""
     model = tdir / f"{tok_cfg['name']}.model"
     if model.exists():
         return model
@@ -70,7 +72,8 @@ def stage_train(tok_cfg: dict, work: Path, tdir: Path, threads: int | None) -> P
     if not sample.exists():
         raise FileNotFoundError(f"{sample} missing; run the sample stage first")
     overrides = {"num_threads": threads} if threads else None
-    model, seconds = train_tokenizer(tok_cfg, sample, tdir, overrides)
+    model, seconds = train_tokenizer(tok_cfg, sample, tdir, overrides, work_dir=work,
+                                     on_checkpoint=on_checkpoint)
     _timed(work, "train", seconds, {"sample_bytes": sample.stat().st_size, "threads": threads})
     return model
 
@@ -108,8 +111,9 @@ def stage_freeze(tdir: Path, config_path: Path, specials_path: Path) -> dict:
 
 
 def run(tok_cfg: dict, data_cfg: dict, config_path: Path, specials_rel: str, stage: str,
-        size_bytes: int | None = None, only: list[str] | None = None, threads: int | None = None) -> int:
-    """Run one stage or all of them in order. Returns a process exit code."""
+        size_bytes: int | None = None, only: list[str] | None = None, threads: int | None = None,
+        on_checkpoint: Callable[[str], None] | None = None) -> int:
+    """Run one stage or all of them in order, calling on_checkpoint after each saved artifact."""
     root = data_dir()
     work = root / "tokenizer" / "work"
     tdir = resolve_path(data_cfg["paths"]["tokenizer"])
@@ -117,12 +121,19 @@ def run(tok_cfg: dict, data_cfg: dict, config_path: Path, specials_rel: str, sta
     tdir.mkdir(parents=True, exist_ok=True)
     todo = STAGES if stage == "all" else (stage,)
     if "sample" in todo and not (work / "sample.txt").exists():
-        if stage_sample(tok_cfg, data_cfg, work, size_bytes, only) is None:
+        report = stage_sample(tok_cfg, data_cfg, work, size_bytes, only)
+        if on_checkpoint:
+            on_checkpoint("sample")
+        if report is None:
             return 0 if stage == "sample" else 3       # partial sample: stop before training
     if "train" in todo:
-        stage_train(tok_cfg, work, tdir, threads)
+        stage_train(tok_cfg, work, tdir, threads, on_checkpoint=on_checkpoint)
     if "eval" in todo and not (tdir / "report.json").exists():
         stage_eval(tok_cfg, work, tdir)
+        if on_checkpoint:
+            on_checkpoint("eval")
     if "freeze" in todo and not (tdir / FROZEN_NAME).exists():
         stage_freeze(tdir, config_path, root / specials_rel)
+        if on_checkpoint:
+            on_checkpoint("freeze")
     return 0

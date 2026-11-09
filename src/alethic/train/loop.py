@@ -9,6 +9,7 @@ import signal
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import torch
@@ -16,6 +17,7 @@ import torch.nn.functional as F
 
 from alethic.config import config_hash
 from alethic.data.loader import WindowLoader
+from alethic.eval.bpb import evaluate_bpb
 from alethic.model.params import count_parameters, flops_per_token
 from alethic.model.transformer import ModelConfig, Transformer
 from alethic.tokenizer.specials import SpecialsRegistry, check_append_only, read_names
@@ -41,6 +43,7 @@ class RunSpec:
     resume: str | None = None        # None, "auto", or a checkpoint folder
     max_cost: float | None = None    # dollars; save and stop once reached
     stop_step: int | None = None     # stop (with a checkpoint) after this many total steps
+    on_checkpoint: Callable[[Path], None] | None = None   # optional hook called after each checkpoint save
 
 
 def total_steps(train_cfg: dict) -> int:
@@ -180,9 +183,27 @@ def train(spec: RunSpec) -> dict:
     o = tc["optim"]
     tokens_per_step = seq_len * batch_seqs
     log_every = int(tc["log_every"])
+    eval_every = int(tc.get("eval_every", 1000))
+    shards_dir = spec.shards[0].parents[2] if len(spec.shards[0].parents) >= 3 else spec.shards[0].parent
     wall = base_wall
 
-    saver = ckpt.AsyncSaver()
+    saver = ckpt.AsyncSaver(on_saved=spec.on_checkpoint)
+
+    def run_val(at_step: int, full: bool = False) -> dict | None:
+        """Evaluate validation BPB without disturbing training RNG state."""
+        saved_rng = rng_state()
+        try:
+            res = evaluate_bpb(model, shards_dir, seq_len, micro, device, use_bf16,
+                               max_tokens_per_source=None if full else 2_000_000)
+        finally:
+            set_rng_state(saved_rng)
+        if res["overall_bpb"] is None:
+            return None
+        row = {"step": at_step, "full": full, **res}
+        with open(run_dir / "val_log.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+        print(json.dumps({"val_step": at_step, "overall_bpb": res["overall_bpb"], "sources": res["sources"]}))
+        return res
 
     def save(at_step: int, blocking: bool = False) -> Path:
         """Snapshot the state after `at_step` steps to CPU, then write it in the background."""
@@ -243,9 +264,12 @@ def train(spec: RunSpec) -> dict:
                 saved = save(step, blocking=True)
                 print(f"stopping at step {step}: {reason}; checkpoint {saved}")
                 break
+            if eval_every > 0 and step % eval_every == 0 and step < stop_at:
+                run_val(step, full=False)
             if step % int(tc["checkpoint"]["every"]) == 0:
                 saved = save(step)
         else:
+            run_val(step, full=(step == steps))
             saved = save(step, blocking=True)
             if step < steps:
                 reason = "stop-step"

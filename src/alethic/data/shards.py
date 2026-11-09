@@ -164,3 +164,62 @@ def run_unit(unit: dict, docs: Iterable[tuple[np.ndarray, int, bool]], out_root:
               "tokens": sum(r["tokens"] for r in shards)}
     state.append(record)
     return record
+
+
+def write_shards_manifest(data_cfg: dict, shards_dir: Path, state: StateLog, units: list[dict],
+                          stream_targets: dict[str, int], tokenizer_sha: str, dedup_summary: dict,
+                          scale: float, n_workers: int, elapsed: float, new_tokens: int,
+                          known_sources: set[str] | frozenset[str]) -> dict:
+    """Assemble and atomically write shards/manifest.json in deterministic unit order."""
+    kept: list[dict] = []
+    seen = {s: 0 for s in stream_targets}
+    for u in units:
+        uid, s = u["id"], u["stream"]
+        if state.done(uid) and seen[s] < stream_targets[s]:
+            rec = state.records[uid]
+            kept.append(rec)
+            seen[s] += int(rec["tokens"])
+
+    sources = sorted(known_sources)
+    all_shards: list[dict] = []
+    tok_src = {s: 0 for s in sources}
+    train_src = {s: 0 for s in sources}
+    val_src = {s: 0 for s in sources}
+    decontam_src = {s: 0 for s in sources}
+    dedup_src = {s: 0 for s in sources}
+    uzbek_changed = {"uzbek_latn": 0, "uzbek_cyrl": 0}
+    for rec in kept:
+        src = rec["source"]
+        decontam_src[src] += int(rec.get("decontam_dropped", 0))
+        dedup_src[src] += int(rec.get("dedup_dropped", 0))
+        if src in uzbek_changed:
+            uzbek_changed[src] += int(rec.get("uzbek_chars_changed", 0))
+        for sh in rec["shards"]:
+            all_shards.append(sh)
+            tok_src[src] += int(sh["tokens"])
+            if sh["split"] == "train":
+                train_src[src] += int(sh["tokens"])
+            else:
+                val_src[src] += int(sh["tokens"])
+
+    total_tok = sum(tok_src.values())
+    shares = {s: tok_src[s] / max(1, total_tok) for s in sources}
+    tps = new_tokens / max(elapsed, 1e-6)
+    manifest = {
+        "tokenizer_sha256": tokenizer_sha, "target_scale": scale,
+        "total_tokens": total_tok, "train_tokens": sum(train_src.values()), "val_tokens": sum(val_src.values()),
+        "tokens_by_source": tok_src, "train_tokens_by_source": train_src, "val_tokens_by_source": val_src,
+        "shares": shares, "uzbek_combined_share": shares.get("uzbek_latn", 0.0) + shares.get("uzbek_cyrl", 0.0),
+        "dedup": dict(dedup_summary, dropped_by_source=dedup_src),
+        "decontam_dropped": decontam_src, "uzbek_chars_changed": uzbek_changed,
+        "attributions": {
+            s: {k: data_cfg["sources"][s][k] for k in ("repo", "paths", "revision", "license")}
+            for s in ("uzbek_latn", "uzbek_cyrl") if "license" in data_cfg["sources"].get(s, {})
+        },
+        "speed": {"workers": n_workers, "elapsed_seconds": round(elapsed, 2),
+                  "tokens_per_sec_total": round(tps, 1),
+                  "tokens_per_sec_per_worker": round(tps / max(1, n_workers), 1)},
+        "shards": all_shards,
+    }
+    write_json_atomic(shards_dir / "manifest.json", manifest)
+    return manifest

@@ -10,8 +10,10 @@ import pytest
 from alethic.config import ConfigError
 from alethic.data.encode import is_validation
 from alethic.data.fetch import check_source, read_documents
+from alethic.tokenizer.codec import Codec
 from alethic.tokenizer.evaluate import evaluate_tokenizer, indentation_cases
 from alethic.tokenizer.sample import build_sample, read_heldout
+from alethic.tokenizer.train import train_tokenizer
 
 PINNED = "a" * 40
 
@@ -95,3 +97,32 @@ def test_evaluate_report(tiny_codec):
     json.dumps(report)                                   # the report must be JSON-serialisable
     bad = indentation_cases(tiny_codec, ["a\n            b"], max_tokens=1)
     assert bad["12"] == {"cases": 1, "ok": 0, "share": 0.0}
+
+
+def test_train_tokenizer_checkpoints(tmp_path, tokenizer_cfg):
+    """Intermediate EM checkpoints are saved, committed, and reused on resume after an interruption."""
+    from corpus import make_corpus
+    corpus = make_corpus(tmp_path / "corpus.txt")
+    tags = []
+
+    def stop_after_first(tag: str) -> None:
+        tags.append(tag)
+        if tag == "ckpt_2000":
+            raise KeyboardInterrupt("simulated preemption after ckpt_2000")
+
+    ov = {"vocab_size": 1024, "num_threads": 4, "checkpoint_vocabs": [2000, 1400]}
+    with pytest.raises(KeyboardInterrupt):
+        train_tokenizer(tokenizer_cfg, corpus, tmp_path / "out", ov, work_dir=tmp_path,
+                        on_checkpoint=stop_after_first)
+    ckpt_2000 = tmp_path / "spm_checkpoints" / "ckpt_2000.model"
+    assert ckpt_2000.exists() and not (tmp_path / "out" / f"{tokenizer_cfg['name']}.model").exists()
+    mtime_2000 = ckpt_2000.stat().st_mtime_ns
+
+    resumed_tags = []
+    model_path, _ = train_tokenizer(tokenizer_cfg, corpus, tmp_path / "out", ov, work_dir=tmp_path,
+                                    on_checkpoint=resumed_tags.append)
+    assert ckpt_2000.stat().st_mtime_ns == mtime_2000      # ckpt_2000 was reused, not retrained
+    assert resumed_tags == ["ckpt_1400", "model"]
+    codec = Codec(model_path, specials_path=tmp_path / "specials.json")
+    assert codec.vocab_size == 1024
+    assert codec.decode(codec.encode("def f(x):\n    return x\t▁\n")) == "def f(x):\n    return x\t▁\n"

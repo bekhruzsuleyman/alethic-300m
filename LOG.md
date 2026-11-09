@@ -311,3 +311,71 @@ Numbers are exact where they were measured. Times are local (UTC+5).
   128 GiB requested. → Next CPU jobs: hard limit `cpu=(n, n)` and memory near the measured peak.
 - `[finding]` EM sizes: 900,691 → 451,187 → 429,110 → 321,789 → 241,251 → 180,904 (at 21:46);
   rounds about 7–10 min each. Still running (detached); eval + freeze follow automatically.
+
+### M1 run 2 killed at 60 min by local CLI timeout; EM checkpoints added and run 3 spawned (22:45)
+
+- `[bug]` `ap-QiIUdFwfij9BGT2dD06Jpl` stopped at 21:52 (exactly 60 min after its 20:52 start), midway
+  through EM (`size=180,904`, 5 of 10 EM rounds done). Cause: `tokenizer_all` is a `@app.local_entrypoint`
+  that stayed attached in the local shell; when the shell timed out at 3,600 s it sent `SIGINT` to the
+  local `modal` client, which sent a cancellation signal to the remote container (`failed to respond to
+  cancellation for too long: 30 seconds - killing task`). All 12 sample streams and the merged 2.0 GB
+  `work/sample.txt` had already been committed to the Volume by `tok_sample`, so only the 53 min of
+  in-memory SentencePiece training was lost.
+- `[design]` **SentencePiece EM checkpoints (`checkpoint_vocabs: [300000, 120000]` → `50000`).**
+  Verified on `sentencepiece 0.2.3`: `unigram_model_trainer.cc` accepts `seed_sentencepieces_file`
+  (tab-separated `<piece>\t<int64_freq>`) and skips the 12-min suffix-array seed extraction plus earlier
+  EM rounds when given pre-pruned pieces. Traps found and handled in [`train.py`](file:///C:/Users/Bekhruz/Home/Alethic-300M/alethic/src/alethic/tokenizer/train.py):
+  - Frequencies in `seed_sentencepieces_file` must be `int64` (`SimpleAtoi` rejects floats). We scale
+    `exp(score)` from `ModelProto` against single-character probability mass so multi-char and
+    `required_chars_` frequencies match in scale.
+  - Only `NORMAL` pieces with `len(piece) > 1` and no `\t\r\n\0` go into the TSV (single-char pieces,
+    including `\t`, are automatically added from `required_chars_` by `LoadSeedSentencePieces`).
+  - Every `.model`/`.vocab` write now trains to `.tmp.{model,vocab}`, `fsync`s, and `os.replace`s
+    atomically so a killed write never leaves a corrupt `.model`.
+  - [`build.py`](file:///C:/Users/Bekhruz/Home/Alethic-300M/alethic/src/alethic/tokenizer/build.py) and [`modal_app.py`](file:///C:/Users/Bekhruz/Home/Alethic-300M/alethic/deploy/modal_app.py) now call `volume.commit()` immediately after each checkpoint
+    (`ckpt_300000`, `ckpt_120000`, `model`, `eval`, `freeze`).
+- `[design]` Lowered `tok_train` RAM reservation from 128 GiB to 32 GiB (measured peak was 10–15 GiB),
+  cutting base container rate from $1.78/h to $1.01/h, and added `Retries(max_retries=2)`.
+- `[test]` Added `test_train_tokenizer_checkpoints` (interrupts after `ckpt_2000`, verifies resume
+  reuses `ckpt_2000` and finishes `ckpt_1400` → `1024`). **36 passed in 48.1 s** on laptop.
+- `[cost]` Spawned `tok_train` via `modal run --detach deploy/modal_app.py::tokenizer_train --spawn`
+  (`ap-gBuq0LbRPWeklivtDdYoop`, call `fc-01M70PKR5ZEFW4DKQNBVCG508W`). The local process exited
+  immediately, so no local shell timeout can cancel the remote task.
+- `[finding]` Checkpoint progress on `alethic-data` Volume:
+  - By 23:16 (32 min in): `ckpt_300000.model`, `ckpt_300000.vocab`, and `seeds_from_ckpt_300000.tsv`
+    committed to `/data/tokenizer/work/spm_checkpoints/`.
+  - By 23:38 (54 min in): `ckpt_120000.model`, `ckpt_120000.vocab`, and `seeds_from_ckpt_120000.tsv`
+    committed to `/data/tokenizer/work/spm_checkpoints/`. Now in the final EM pass (`120,000 → 50,000`),
+    followed automatically by `eval` and `freeze`.
+
+---
+
+## 2026-11-10 — M1 finished, frozen, and uploaded to Hugging Face; M2/M3a data pipeline built (00:07–01:10)
+
+- `[finding]` `tok_train` (`ap-gBuq0LbRPWeklivtDdYoop`) finished at 00:07 (`train_seconds: 5003.42`,
+  `eval_seconds: 63.36`). All 6 sources passed 100% round-trip (`python` 3.60 B/tok, `code_other` 3.19 B/tok,
+  `fineweb_edu` 5.20 B/tok, `math` 3.94 B/tok, `uzbek_latn` 3.85 B/tok & 2.17 tok/word, `uzbek_cyrl`
+  5.58 B/tok & 2.55 tok/word).
+- `[bug]` `evaluate.py::indentation_cases` initially reported `98.28%` / `97.92%` / `95.99%` on 4 / 8 / 12
+  spaces because `b < end and e > start` counted the line's first code token whenever SentencePiece merged
+  trailing spaces into the word (e.g. `'▁▁▁▁def'` after `'▁▁▁▁▁▁▁▁'`). Fixed to `b >= start and e <= end`
+  (pure indentation tokens inside `[start, end)`), giving **100.00%** across all three widths (`65,080/65,080`,
+  `77,101/77,101`, `36,122/36,122`).
+- `[finding]` Froze `alethic-tokenizer-v1` (`FROZEN.json`):
+  - `model_sha256`: `28685edb461ce3baa8b36f08c32cb04c8f6cb2c1c0c79c6e737816ad214a382b`
+  - `config_sha256`: `81ca75999f7b48b5d654ed4454087c85b30688f9b4cbed053f934ef8c39c4bf1`
+  - `report_sha256`: `a61d310d2596722b4bbfc1f12f3003bb42782bde465a9cbe0d63d314defb0e2a`
+  Synced `FROZEN.json`, `report.json`, `tokenizer.yaml`, and `specials.json` to Modal Volume `alethic-data`
+  and uploaded `tokenizer/` to private HF repo `bekhruzsuleyman/alethic-300m` (commit `4d3749af9c614e06579c33dc341d50654d77d4d5`).
+- `[design]` Built M2/M3/M4 pipeline modules (all ≤ 300 lines):
+  - `data/dedup.py`: 8-byte blake2b document hashing, atomic unit hash `.bin`/`.json`, `build_drop_list`
+    keeping the first copy in `(source, file, row)` order via `np.unique(..., return_index=True)`.
+  - `data/decontam.py`: 13-gram extractor and `DecontamIndex` keyed by `(first_word, last_word)` against
+    pinned HumanEval and MBPP parquet files.
+  - `data/encode.py` + `data/shards.py`: row-group (and within-row-group row-slice) work units, parallel
+    hash and encode pools, stop rule per stream, `state.jsonl` crash recovery, and `shards/manifest.json`.
+  - `eval/bpb.py` + `train/loop.py` + `cli.py`: validation BPB evaluation (`2M` tokens/source every
+    `eval_every=1000` steps and full validation at the end of a run, preserving RNG state), plus
+    `on_checkpoint` hooks in `AsyncSaver` so every 500-step GPU checkpoint commits to the Modal Volume.
+- `[test]` Added `tests/test_data_pipeline.py` (dedup, 13-gram decontam, end-to-end local `data-build`,
+  `state.jsonl` resume idempotence, and `evaluate_bpb`). **39 passed, 0 failed** on laptop CPU ($0).

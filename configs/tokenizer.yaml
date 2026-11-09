@@ -29,6 +29,10 @@ sentencepiece:
 # on decode) are stored inside the .model file. Normalization is otherwise identity (no NFKC).
 u2581_escape: true
 
+# Intermediate Unigram EM vocab sizes saved to work/spm_checkpoints/ and committed to disk/Volume
+# before reaching the final 50,000-id model, so an interrupted run resumes from the last checkpoint.
+checkpoint_vocabs: [300000, 120000]
+
 # Only used if 4, 8 and 12 spaces do not each become one learned piece (plan, Tokenizer).
 # Write each run with U+2581 (e.g. "▁▁▁▁"), not spaces: space symbols are accepted but never match.
 whitespace_symbols: []

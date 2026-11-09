@@ -14,7 +14,8 @@ class BlockTorch:
 sys.meta_path.insert(0, BlockTorch())
 from alethic import cli
 import alethic.tokenizer.build, alethic.data.fetch, alethic.tokenizer.sample, alethic.tokenizer.evaluate
-assert cli.main(["data-build"]) == 2                  # goes through main() and its error handling
+import alethic.data.dedup, alethic.data.decontam, alethic.data.encode, alethic.eval.bpb
+assert cli.main(["data-build"]) == 1                  # goes through main() and its error handling without torch
 assert "torch" not in sys.modules
 print("ok")
 """

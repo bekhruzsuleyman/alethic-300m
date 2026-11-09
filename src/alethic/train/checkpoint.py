@@ -91,10 +91,11 @@ class AsyncSaver:
     the previous one. wait() must be called before exit.
     """
 
-    def __init__(self) -> None:
-        """No save running yet."""
+    def __init__(self, on_saved=None) -> None:
+        """No save running yet; optional on_saved(folder) callback runs after each save."""
         self._thread: threading.Thread | None = None
         self._error: BaseException | None = None
+        self._on_saved = on_saved
         self.last: Path | None = None
 
     def save(self, *args, blocking: bool = False, **kwargs) -> None:
@@ -103,6 +104,8 @@ class AsyncSaver:
         def run() -> None:
             try:
                 self.last = save_checkpoint(*args, **kwargs)
+                if self._on_saved is not None and self.last is not None:
+                    self._on_saved(self.last)
             except BaseException as err:   # re-raised in the training thread by wait()
                 self._error = err
         self._thread = threading.Thread(target=run, name="checkpoint", daemon=False)

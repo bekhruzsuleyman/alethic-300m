@@ -33,17 +33,29 @@ def check_source(name: str, src: dict) -> None:
                           "other-code language list in data.yaml before anything is downloaded.")
 
 
-def list_parquet(src: dict, paths: list[str] | None = None) -> list[tuple[str, int]]:
+def list_parquet(src: dict, paths: list[str] | None = None,
+                 local_dir: Path | None = None) -> list[tuple[str, int]]:
     """(path in repo, size in bytes) of every parquet file under the source's folders, sorted."""
+    folders = paths or src["paths"]
+    if local_dir is not None and src.get("repo") == "local":
+        found = []
+        for folder in folders:
+            base = local_dir / folder if folder != "." else local_dir
+            if base.is_dir():
+                for p in base.rglob("*.parquet"):
+                    found.append((p.relative_to(local_dir).as_posix(), p.stat().st_size))
+        if not found:
+            raise ConfigError(f"no local parquet files in {local_dir} under {folders}")
+        return sorted(found)
     api = HfApi()
     found = []
-    for folder in paths or src["paths"]:
+    for folder in folders:
         for f in api.list_repo_tree(src["repo"], repo_type="dataset", revision=src["revision"],
                                     path_in_repo=folder, recursive=True):
             if f.path.endswith(".parquet"):
                 found.append((f.path, int(f.size)))
     if not found:
-        raise ConfigError(f"no parquet files in {src['repo']} under {paths or src['paths']}")
+        raise ConfigError(f"no parquet files in {src['repo']} under {folders}")
     return sorted(found)
 
 
@@ -98,3 +110,45 @@ def iter_source(name: str, src: dict, raw_root: Path, seed: int, stats: dict,
         stats.setdefault("files", []).append(path_in_repo)
         stats["parquet_bytes"] = stats.get("parquet_bytes", 0) + size
         yield from read_documents(local, name, src["text_column"], src["key_column"], seed, stats)
+
+
+def read_row_group_range(path: Path, source: str, text_col: str, key_col: str,
+                         rg_start: int, rg_end: int,
+                         row_start: int | None = None, row_end: int | None = None) -> tuple[list[tuple[str, str]], int]:
+    """Read row groups [rg_start, rg_end) (and optional row slice) in exact row order."""
+    pf = pq.ParquetFile(path)
+    missing = {text_col, key_col} - set(pf.schema_arrow.names)
+    if missing:
+        raise ConfigError(f"{path} has no column(s) {sorted(missing)}; columns are {pf.schema_arrow.names}")
+    docs: list[tuple[str, str]] = []
+    uzbek_changed = 0
+    is_uz = source in UZBEK_SOURCES
+    for rg in range(rg_start, min(rg_end, pf.num_row_groups)):
+        table = pf.read_row_group(rg, columns=[key_col, text_col])
+        if row_start is not None and row_end is not None:
+            table = table.slice(row_start, row_end - row_start)
+        for key, text in zip(table.column(key_col).to_pylist(), table.column(text_col).to_pylist()):
+            if not text:
+                continue
+            if is_uz:
+                text, changed = normalize_uzbek(text)
+                uzbek_changed += changed
+            docs.append((str(key or ""), text))
+    return docs, uzbek_changed
+
+
+def fetch_source_parquet(name: str, src: dict, raw_root: Path, target_bytes: int,
+                         paths: list[str] | None = None) -> list[tuple[str, Path]]:
+    """Download parquet files in sorted order until downloaded size >= target_bytes."""
+    check_source(name, src)
+    dest = Path(raw_root) / name
+    files: list[tuple[str, Path]] = []
+    got_bytes = 0
+    for path_in_repo, size in list_parquet(src, paths):
+        local_candidate = dest / path_in_repo
+        local = local_candidate if local_candidate.is_file() else download(src, path_in_repo, dest)
+        files.append((path_in_repo, local))
+        got_bytes += max(size, local.stat().st_size)
+        if got_bytes >= target_bytes:
+            break
+    return files

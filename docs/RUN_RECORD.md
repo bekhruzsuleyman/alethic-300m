@@ -106,3 +106,37 @@ Those modules exist as stubs that raise `NotImplementedError` and name their mil
 ### Rented servers
 
 None were started. Nothing is running or billing.
+
+---
+
+## M1: 50,000-id SentencePiece Unigram tokenizer on Modal CPU, 2026-11-10
+
+**Gate:** 100% lossless round-trip across all 6 sources, indentation (`4`, `8`, `12` spaces) ≤ 2 tokens on ≥ 99% of cases, Uzbek ≤ 3.0 tokens/word, 2,000 held-out docs per source, frozen with SHA-256 in `FROZEN.json` and backed up to private Hugging Face repo `bekhruzsuleyman/alethic-300m`. **Result: passed.**
+
+### Frozen tokenizer hashes (`FROZEN.json`)
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `alethic-tokenizer-v1.model` (`model_sha256`) | `28685edb461ce3baa8b36f08c32cb04c8f6cb2c1c0c79c6e737816ad214a382b` |
+| `configs/tokenizer.yaml` (`config_sha256`) | `81ca75999f7b48b5d654ed4454087c85b30688f9b4cbed053f934ef8c39c4bf1` |
+| `report.json` (`report_sha256`) | `a61d310d2596722b4bbfc1f12f3003bb42782bde465a9cbe0d63d314defb0e2a` |
+| Hugging Face backup (`bekhruzsuleyman/alethic-300m` `tokenizer/`) | Commit `4d3749af9c614e06579c33dc341d50654d77d4d5` |
+
+### Per-source evaluation metrics (2,000 held-out documents per source; 12,002 total)
+
+| Source | Docs | UTF-8 Bytes | Tokens | Bytes/Token | Tokens/Word | Byte-Fallback Share | Round-Trip |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `python` | 2,000 | 7,764,458 | 2,155,705 | 3.6018 | 3.3522 | 10.08% | **100.00%** |
+| `code_other` | 2,002 | 6,349,179 | 1,990,023 | 3.1905 | 3.2041 | 10.26% | **100.00%** |
+| `fineweb_edu` | 2,000 | 9,535,149 | 1,833,932 | 5.1993 | 1.2248 | 2.24% | **100.00%** |
+| `math` | 2,000 | 14,917,053 | 3,790,545 | 3.9353 | 1.6305 | 4.62% | **100.00%** |
+| `uzbek_latn` | 2,000 | 6,955,586 | 1,806,499 | 3.8503 | **2.1674** (≤ 3.0) | 1.84% | **100.00%** |
+| `uzbek_cyrl` | 2,000 | 7,057,623 | 1,264,539 | 5.5812 | **2.5515** (≤ 3.0) | 1.59% | **100.00%** |
+
+- **Python indentation gate (`indentation_max_tokens: 2`, `indentation_min_share: 0.99`):**
+  - 4 spaces (piece ID `338`): `65,080 / 65,080` (**100.00%**)
+  - 8 spaces (piece ID `340`): `77,101 / 77,101` (**100.00%**)
+  - 12 spaces (piece ID `356`): `36,122 / 36,122` (**100.00%**)
+- **Uzbek apostrophe normalization (`sample.json`):** `1,829,104` chars normalized in `uzbek_latn`, `3,968` chars normalized in `uzbek_cyrl`.
+- **Measured timings (`timings.json`):** `train_seconds: 5003.42` (83.4 min across 3 EM stages `1M → 300k → 120k → 50k` on 32 threads), `eval_seconds: 63.36` (1.06 min).
+- **Modal cost:** ~$3.40 of the $30/month free Starter credits across sample download + run 2 (cancelled by local CLI 60-min timeout) + run 3 (spawned with EM checkpoints at 300k and 120k, 32 GiB RAM).
