@@ -128,6 +128,13 @@ under `$ALETHIC_DATA_DIR`; paths in the configs are relative to it.
   rename on Volumes is not documented: run the `probe` before trusting crash safety there.
 - **SIGTERM** is how rented GPUs vanish; the loop saves a checkpoint on SIGTERM/SIGINT and every 500 steps.
 
+## Hugging Face
+
+Model repo **`bekhruzsuleyman/alethic-300m`** (private; on 2026-11-09 it held only `.gitattributes` and
+`README.md`). Every upload to it needs the owner's approval first, file by file or batch by batch;
+the pipeline never uploads by itself. StarCoderData's license requires derived data to stay private,
+so never make a repo holding data or models trained on it public without the owner's explicit decision.
+
 ## Git
 
 Remote: https://github.com/bekhruzsuleyman/alethic-300m (`main`). Commit freely, but **push only when

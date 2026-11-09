@@ -227,3 +227,13 @@ Numbers are exact where they were measured. Times are local (UTC+5).
   from M1). Then approve the two smoke checks (`tests`, `probe`, about $0.02 together).
 - `[next]` Open question for the Vast.ai move: how the shards get from the Modal Volume to Vast.ai
   (about 12 GB of shards plus raw data). Owner approves the transfer when the time comes.
+
+### Hugging Face repo (20:15)
+
+- `[setup]` Owner named the Hugging Face repo **`bekhruzsuleyman/alethic-300m`**. Checked with
+  `huggingface_hub`: it is a **model** repo, **private**, not gated, commit `aa4dfc69`, files
+  `.gitattributes` (1,519 B) and `README.md` (21 B). No dataset or Space of that name exists.
+  The laptop is logged in to Hugging Face as `bekhruzsuleyman`.
+- `[next]` Owner to confirm what goes there. Proposed: the frozen tokenizer (M1), checkpoints and final
+  weights (M4–M7), which also solves the Modal → Vast.ai move. Shards (about 12 GB) fit better in a
+  separate private dataset repo. Each upload is approved by the owner first.
