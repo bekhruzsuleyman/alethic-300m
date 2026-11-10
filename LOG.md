@@ -553,3 +553,31 @@ Numbers are exact where they were measured. Times are local (UTC+5).
   step 6,000 is mid-schedule for all three runs, as in M6.
 - `[next]` Per the plan's rule (f < 0.33): next options are run A (a smaller gate) or dropping SGCA.
   Owner decides; nothing started.
+
+### Run B continued to 1B tokens (`abl_gqa_narrow`, steps 6,000 → 15,259, ~11:40–12:50)
+
+- `[decision]` Owner: "tell it continue" → the plan's optional extension to the full 15,259 steps.
+  Resumed from `step_0006000` (`runs.jsonl`: `start_step 6000`, same model-config `13f0061f…` and shard
+  `fdb5f43b…` hashes); `--max-cost 9.0` (cumulative guard). App `ap-pXjz7ox1iscjzX0QQDZMio`, call
+  `fc-01M721XQ4DM61BMF72HFMDRJS8`. Finished `step 15259/15259, reason done`; no red flags.
+- `[finding]` **Final full validation (step 15,259, 1,000,013,824 tokens):** B **0.811015** vs SGCA 0.847203,
+  GQA 0.806841. **f = (0.811015 − 0.806841) / (0.847203 − 0.806841) = 0.004174 / 0.040362 = 0.103.**
+  From step 4,000 to the end f stays in 0.05–0.11; B − GQA stays +0.002…+0.004 (near the ~0.003 jitter),
+  SGCA − B stays +0.025…+0.036. **The gate causes about 90% of SGCA's 1B-token deficit; the FFN cut ~10%.**
+- `[finding]` Val BPB 7k→15k: B 0.9051, 0.8841, 0.8683, 0.8531, 0.8402, 0.8298, 0.8214, 0.8157, 0.8118
+  (GQA 0.9022 … 0.8078; SGCA 0.9375 … 0.8480). B beats SGCA's final 1B-token score (0.8472) already at
+  step 11,000 (721M tokens: 0.8402), with 8.3% fewer parameters.
+- `[finding]` Decay-rate ratios to GQA: 3k→6k B 1.013 / SGCA 0.863; 6k→15,259 B 0.986 / SGCA 0.907;
+  3k→15,259 **B 0.999 / SGCA 0.886**. The narrow FFN scales like GQA; the gated model scales slower.
+- `[finding]` Per-source final BPB (B / SGCA / GQA; f): code_other 0.6506/0.6953/0.6465 (0.09);
+  fineweb_edu 0.9821/1.0138/0.9766 (0.15); math 1.0533/1.0946/1.0494 (0.09); python 0.5725/0.6074/0.5696
+  (0.07); uzbek_cyrl 0.7649/0.7999/0.7617 (0.08); uzbek_latn 1.1597/1.2029/1.1547 (0.11).
+- `[finding]` Final train loss: B 2.2600, SGCA 2.3579, GQA 2.2490. Speed: median 152,163 tok/s, 44.2% MFU
+  (fastest of the three; GQA 148,948 / 45.6%, SGCA 138,827 / 42.5%).
+- `[cost]` Guard total $8.31 at $4.39/h → 1.893 h wall; real at $4.14/h = **$7.84** for the whole run
+  ($3.14 first half + $4.70 continuation). Cumulative Modal spend ≈ $28.90 + $7.84 = **≈ $36.74**.
+  Final checkpoint `runs/abl_gqa_narrow/checkpoints/step_0015259` on the Volume only (not on HF).
+- `[finding]` Caveats: one seed per model; B is 8.3% smaller and ~8% cheaper per token than SGCA/GQA.
+  Interpretation: at matched data and schedule, the sine gate is a net cost at 1B tokens; the FFN width
+  that pays for it matters little. Hypothesis "FFN width gives more capacity per FLOP" is **not** supported.
+- `[next]` Owner decides: run A (a smaller/cheaper gate), drop SGCA, or move on to M3b/M7.

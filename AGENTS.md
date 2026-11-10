@@ -25,7 +25,7 @@ it before building anything.
 | M4 2,000-step GPU smoke test on Modal H100 (`m4_sgca` & `m4_gqa`) | **Done**: SGCA `139.7k` tok/s (`42.72% MFU`, val BPB `1.5269 → 1.1734`), GQA `149.0k` tok/s (`45.57% MFU`, val BPB `1.6055 → 1.1638`); checkpoints & logs backed up to HF |
 | M5 LR sweep (`100M` tok × `{2e-4, 4e-4, 8e-4}` × `{sgca, gqa}`) | **Done**: SGCA beats GQA at all 3 LRs and on all 6 sources (`1.4090 vs 1.5034` @ `2e-4`, `1.2697 vs 1.3942` @ `4e-4`, `1.2443 vs 1.3783` @ `8e-4`); `4e-4` confirmed for M6 |
 | M6 1B-token matched pair (`15,259` steps each on H100) | **Done**: `m6_sgca` (`overall_bpb = 0.847203`, `loss = 2.3579`, `42.5% MFU`, HF `748494ce`) vs `m6_gqa` (`overall_bpb = 0.806841`, `loss = 2.2490`, `45.6% MFU`, HF `3c900c7e`); SGCA leads `< 144M` tok, GQA leads `> 144M` tok (`-0.0404` BPB at 1B) |
-| Run B: GQA-narrow ablation (`abl_gqa_narrow`, 6,000 steps, H100) | **Done**: B6 = `0.9302` vs SGCA `0.9612` / GQA `0.9273` → f = `0.086` (< 0.33: the **gate** is the main cost, not the FFN cut); `150.8k` tok/s, `$3.14`; checkpoint on Volume only |
+| Run B: GQA-narrow ablation (`abl_gqa_narrow`, full 15,259 steps = 1B tokens, H100) | **Done**: final full val BPB `0.811015` vs SGCA `0.847203` / GQA `0.806841` → f = `0.103` (step 6,000: `0.086`): the **sine gate** causes ~90% of SGCA's deficit, the FFN cut ~10%; `152.2k` tok/s, `$7.84`; checkpoint on Volume only |
 | M3b / M7 / M8 | Wait for owner after M6 (`~$28.90 / $30.00` Modal free credits used; `0` containers running) |
 
 Update this table when a milestone's gate is passed.

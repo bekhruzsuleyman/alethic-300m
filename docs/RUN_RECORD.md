@@ -372,3 +372,27 @@ rather than its sine gate? **Result: f = 0.086 < 0.33 → the gate is the main c
 f = (0.930241 − 0.9273) / (0.9612 − 0.9273) = 0.0029 / 0.0339 = **0.086**. Decay-rate ratio to GQA over
 3k→6k: B 1.013, SGCA 0.863. Per-source f at step 6,000 ranges 0.01–0.14 (all six sources agree).
 Caveats: one seed per run; differences below ~0.003 BPB are jitter.
+
+### Run B continuation to 1B tokens (steps 6,000 → 15,259), 2026-11-10
+
+| Item | Value |
+| --- | --- |
+| Command | same as above without `--stop-step`, `--max-cost 9.0` (resumed from `step_0006000`) |
+| Result | `finished: step 15259/15259, reason done`; final checkpoint `step_0015259` (Volume only) |
+| Final full val BPB | **B 0.811015** · SGCA 0.847203 · GQA 0.806841 |
+| f at 1B tokens | (0.811015 − 0.806841) / (0.847203 − 0.806841) = 0.004174 / 0.040362 = **0.103** |
+| Decay ratio to GQA, 3k→15,259 | B 0.999 · SGCA 0.886 |
+| Final train loss | B 2.2600 · SGCA 2.3579 · GQA 2.2490 |
+| Speed | 152,163 tok/s median, 44.2% MFU |
+| Cost | whole run $7.84 (guard $8.31 at $4.39/h = 1.893 h; real $4.14/h) |
+
+| Source | B | SGCA | GQA | f |
+| --- | --- | --- | --- | --- |
+| code_other | 0.6506 | 0.6953 | 0.6465 | 0.09 |
+| fineweb_edu | 0.9821 | 1.0138 | 0.9766 | 0.15 |
+| math | 1.0533 | 1.0946 | 1.0494 | 0.09 |
+| python | 0.5725 | 0.6074 | 0.5696 | 0.07 |
+| uzbek_cyrl | 0.7649 | 0.7999 | 0.7617 | 0.08 |
+| uzbek_latn | 1.1597 | 1.2029 | 1.1547 | 0.11 |
+
+Conclusion: about 90% of SGCA's 1B-token deficit comes from the sine gate, about 10% from the FFN cut.
