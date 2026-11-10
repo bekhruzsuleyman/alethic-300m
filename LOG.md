@@ -475,16 +475,18 @@ Numbers are exact where they were measured. Times are local (UTC+5).
 - `[finding]` **Why SGCA won M5 (100M tokens) but GQA won M6 (1B tokens) — the `step 2,200` crossover:**
   - Both models are strictly Iso-Parameter (`302,908,416` params) and strictly Iso-FLOP (`3.0254 GFLOP/tok`,
     since SGCA's $1024 \times 1024$ `gate_proj` adds `6.29 MFLOP/tok/layer` while shrinking `d_ff` from
-    `3072 → 2730` removes `6.30 MFLOP/tok/layer`).
+    `2560 → 2218` removes `6.30 MFLOP/tok/layer`). *(Corrected 2026-11-10: this line first said
+    `3072 → 2730`; the configs are `2560` (GQA) and `2218` (SGCA). The MFLOP figures were right.)*
   - **Early / low-FLOP regime (`steps 100 → 2,200`, `0 → 144M` tokens, `< 0.44 EFLOPs`):** SGCA's
     sinusoidal gate (`C = (W·H + b) ⊙ (alpha ⊙ sin(A))`) accelerates early representation learning, giving
     much lower train loss at step 1,000 (`4.2858` vs `4.7187`) and step 1,500 (`3.5302` vs `3.6608`), and
     lower validation BPB at step 1,000 (`1.4627` vs `1.6024`) and step 2,000 (`1.1564` vs `1.1619`).
   - **Exact crossover at step `2,200` (`144.2M` tokens, `0.44 EFLOPs`):** Both models hit `loss = 3.245` nats.
-  - **Scaling regime (`steps 2,300 → 15,259`, `150M → 1.0B` tokens, `0.45 → 3.03 EFLOPs`):** Once past
-    the initial warmup/low-compute phase, spending `1,050,624` parameters per layer on SwiGLU FFN width
-    (`d_ff = 3072` in GQA vs `2730` in SGCA) provides higher capacity per FLOP than spending them on
-    `gate_proj`. By step `10,500` (`688M` tokens), `m6_gqa` already surpasses `m6_sgca`'s final step-`15,259`
+  - **Scaling regime (`steps 2,300 → 15,259`, `150M → 1.0B` tokens, `0.45 → 3.03 EFLOPs`):**
+    **Hypothesis (unconfirmed until run B reports):** once past the warmup/low-compute phase, spending
+    `1,050,624` parameters per layer on SwiGLU FFN width (`d_ff = 2560` in GQA vs `2218` in SGCA) gives
+    more capacity per FLOP than spending them on `gate_proj`. M6 alone cannot separate the two causes;
+    run B (GQA with `d_ff = 2218`, no gate) tests it. By step `10,500` (`688M` tokens), `m6_gqa` already surpasses `m6_sgca`'s final step-`15,259`
     (`1.0B`-token) validation BPB across all 6 sources, finishing `15,259` steps ahead by **`-0.0404` BPB**
     and **`-0.1088` nats** while also running **`6.7%` faster** on H100 (`45.6%` vs `42.5%` MFU).
 - `[finding]` **Host CPU & memory right-sizing (`deploy/modal_app.py`):**
@@ -501,3 +503,53 @@ Numbers are exact where they were measured. Times are local (UTC+5).
 - `[next]` All milestones through M6 are complete, verified, and backed up to Hugging Face (`bekhruzsuleyman/alethic-300m`).
   Stop and wait for the owner's decision on whether/where to run M3b (6B-token shards) and M7 (6B-token training).
 
+
+### Run B: GQA-narrow ablation (`abl_gqa_narrow`, 6,000 steps on H100, 10:30–11:18)
+
+- `[decision]` Owner plan `run_b_plan.md` (2026-11-10), owner approved the run and its spend in advance.
+  Question: SGCA differs from GQA by a sine gate **and** a narrower FFN (`2560 → 2218`). Run B = GQA with
+  `ffn_hidden = 2218` and no gate, so the two causes separate.
+- `[setup]` `configs/model_gqa_narrow.yaml` (only `name`, `ffn_hidden`, `expected_params` differ from
+  `model_gqa.yaml`; SHA-256 `44a6340d…91c9e9`, model-config hash in the run `13f0061f…dc4792`).
+  Parameters, checked on the meta device: count = formula = **277,693,440**
+  (per layer 2,621,440 + 6,813,696 + 2,048 = 9,437,184; × 24 = 226,492,416; + 51,200,000 + 1,024).
+  Launcher `train` now accepts `gqa_narrow`. **39 tests passed** (48.8 s).
+- `[setup]` Same shards (`fdb5f43b…`), tokenizer (`28685edb…`), seed 1234 and data order as M6; schedule
+  identical to M6 (15,259 steps, warmup 763, LR 4e-4 → 4e-5 cosine), stopped at step 6,000.
+  Command: `modal run --detach deploy/modal_app.py::train --model gqa_narrow --run-name abl_gqa_narrow
+  --steps 15259 --warmup-steps 763 --peak-lr 0.0004 --stop-step 6000 --max-cost 4.0 --spawn`
+  (app `ap-Bnvgoz5wfKCohy0GCklIM7`, call `fc-01M71YZ9ZDGN3963675ZVFVRMF`, `NVIDIA H100 80GB HBM3`).
+- `[test]` Red flags: none. Step-100 loss **8.7873** (range 8.7–9.1); no NaN; MFU 43.8% (GQA 45.6%);
+  stopped by `stop-step` at 6,000, not by the cost guard.
+- `[finding]` **Validation BPB (overall, fixed slice):**
+
+  | Step | Tokens | B (GQA-narrow) | SGCA | GQA | B − GQA | SGCA − B |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | 1,000 | 66M | 1.5979 | 1.4627 | 1.6024 | −0.0045 | −0.1352 |
+  | 2,000 | 131M | 1.1707 | 1.1564 | 1.1619 | +0.0088 | −0.0143 |
+  | 3,000 | 197M | 1.0598 | 1.0741 | 1.0547 | +0.0052 | +0.0143 |
+  | 4,000 | 262M | 1.0038 | 1.0285 | 1.0028 | +0.0009 | +0.0247 |
+  | 5,000 | 328M | 0.9604 | 0.9892 | 0.9571 | +0.0033 | +0.0288 |
+  | 6,000 | 393M | **0.9302** | 0.9612 | 0.9273 | +0.0029 | +0.0310 |
+
+- `[finding]` **Decision value:** f = (B6 − GQA6) / (SGCA6 − GQA6) = (0.930241 − 0.9273) / (0.9612 − 0.9273)
+  = 0.0029 / 0.0339 = **0.086 < 0.33 → the gate is the main cost.** The FFN cut explains about 9% of
+  SGCA's deficit at step 6,000; B − GQA (+0.0029) is inside the ~0.003 jitter.
+- `[finding]` Decay rate r = −d ln(BPB) / d ln(D), steps 3k→6k: B 0.1882, SGCA 0.1602, GQA 0.1857;
+  ratio to GQA: **B 1.013, SGCA 0.863**. The narrow FFN scales like GQA; SGCA's slower decay comes with
+  the gate. Per interval (B/GQA, SGCA/GQA): 3k–4k 1.078/0.862, 4k–5k 0.946/0.834, 5k–6k 1.009/0.907.
+- `[finding]` Per-source BPB at step 6,000 (B / SGCA / GQA; f per source): code_other
+  0.7926/0.8363/0.7904 (0.05); fineweb_edu 1.0968/1.1207/1.0928 (0.14); math 1.1875/1.2241/1.1839
+  (0.09); python 0.6753/0.7106/0.6725 (0.07); uzbek_cyrl 0.8797/0.9032/0.8794 (0.01); uzbek_latn
+  1.3200/1.3467/1.3172 (0.10). All six sources agree: f ≤ 0.14.
+- `[finding]` Speed: median **150,819 tokens/s** (GQA 148,951; SGCA 138,778), MFU 43.8% (MFU uses B's
+  smaller FLOPs per token, so it reads lower although B is the fastest of the three).
+- `[cost]` Guard count $3.334 at $4.39/h → 0.7595 h wall time; real Modal rate $4.14/h × 0.7595 h =
+  **$3.14** (estimate $3.1). Cumulative Modal spend ≈ $28.90 + $3.14 = **≈ $32.04** (owner topped up).
+  Checkpoint `runs/abl_gqa_narrow/checkpoints/step_0006000` stays on the Volume; not uploaded to HF.
+- `[finding]` Caveats: one seed per run; differences below ~0.003 BPB are jitter. B has 8.3% fewer
+  parameters and ~8% fewer FLOPs per token than SGCA and GQA; at equal tokens it still matches GQA
+  within jitter, so the narrow FFN alone costs little at 393M tokens. The full schedule was kept, so
+  step 6,000 is mid-schedule for all three runs, as in M6.
+- `[next]` Per the plan's rule (f < 0.33): next options are run A (a smaller gate) or dropping SGCA.
+  Owner decides; nothing started.

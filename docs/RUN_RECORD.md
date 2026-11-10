@@ -262,7 +262,7 @@ modal run --detach deploy/modal_app.py::data_build --target-scale 0.1667 --worke
 
 | Artifact / Field | `m6_sgca` (`SGCA`) | `m6_gqa` (`GQA`) |
 | --- | --- | --- |
-| `n_params` | `302,908,416` (`d_ff = 2730` + `gate_proj` + `alpha`) | `302,908,416` (`d_ff = 3072`) |
+| `n_params` | `302,908,416` (`d_ff = 2218` + `gate_proj` + `alpha`) | `302,908,416` (`d_ff = 2560`) |
 | `model_config_sha256` | `6a741d419c9a0ea0131b0ad8555b0787feab36be4d3aff5396c951c4871cbc1e` | `f0df244634935342c633cff44c1ee73d0c1fd30262736e77657160764700fd0e` |
 | `tokenizer_sha256` | `28685edb461ce3baa8b36f08c32cb04c8f6cb2c1c0c79c6e737816ad214a382b` | `28685edb461ce3baa8b36f08c32cb04c8f6cb2c1c0c79c6e737816ad214a382b` |
 | `shards_sha256` | `fdb5f43b83d2cf34ba98ca328a3ac09806d160bc9c8a9a61e1eace02c9408adc` | `fdb5f43b83d2cf34ba98ca328a3ac09806d160bc9c8a9a61e1eace02c9408adc` |
@@ -320,7 +320,7 @@ modal run --detach deploy/modal_app.py::data_build --target-scale 0.1667 --worke
 1. **Two distinct compute regimes (`< 144M` tokens vs `> 144M` tokens):**
    - **Low-compute regime (`0 → 2,200` steps / `< 144M` tokens / `< 0.44 EFLOPs`):** SGCA's sinusoidal gate (`C = (W·H + b) ⊙ (alpha ⊙ sin(A))`) acts as a strong early inductive bias, dropping loss much faster (`4.2858` vs `4.7187` at step 1,000; `-0.1244` BPB at 100M tokens in M5).
    - **Crossover at step `2,200` (`144.2M` tokens, `0.44 EFLOPs`):** Both models reach `loss = 3.245` nats.
-   - **Scaling regime (`2,200 → 15,259` steps / `144M → 1.0B` tokens / `0.44 → 3.03 EFLOPs`):** Standard GQA (`d_ff = 3072`) scales significantly better with compute than SGCA (`d_ff = 2730`), finishing 1B tokens ahead on **all 6 sources** by **`-0.0404` overall BPB** (`0.806841` vs `0.847203`) and **`-0.1088` nats** training loss (`2.2490` vs `2.3579`).
+   - **Scaling regime (`2,200 → 15,259` steps / `144M → 1.0B` tokens / `0.44 → 3.03 EFLOPs`):** Standard GQA (`d_ff = 2560`) scales significantly better with compute than SGCA (`d_ff = 2218`), finishing 1B tokens ahead on **all 6 sources** by **`-0.0404` overall BPB** (`0.806841` vs `0.847203`) and **`-0.1088` nats** training loss (`2.2490` vs `2.3579`).
 2. **Sample-efficiency & compute-efficiency equivalence:**
    - `m6_gqa` reaches `overall_bpb = 0.848843` at **step `10,000`** (`655.4M` tokens) and **`0.836540` at step `11,000`** (`720.9M` tokens) — beating `m6_sgca`'s final **step `15,259`** (`1.000B` tokens) score of `0.847203` with **31% fewer tokens/FLOPs** and **36% less GPU wall-clock time**.
 3. **Hardware utilization (`MFU`) and host sizing:**
@@ -338,3 +338,37 @@ modal run --detach deploy/modal_app.py::data_build --target-scale 0.1667 --worke
   - M6 (1B-token matched pair on H100, `m6_sgca` `$9.07` + `m6_gqa` `$8.36`): `$17.43`
   - **Grand total (M1 through M6 complete):** **`~$28.90`** of the `$30.00` monthly free Starter allowance (`~$1.10` remaining).
 
+
+## Run B: GQA-narrow ablation (`abl_gqa_narrow`, 6,000 of 15,259 steps on Modal H100), 2026-11-10
+
+**Question:** how much of SGCA's 1B-token deficit (−0.0404 BPB vs GQA) comes from its narrower FFN
+rather than its sine gate? **Result: f = 0.086 < 0.33 → the gate is the main cost.**
+
+| Item | Value |
+| --- | --- |
+| Command | `modal run --detach deploy/modal_app.py::train --model gqa_narrow --run-name abl_gqa_narrow --steps 15259 --warmup-steps 763 --peak-lr 0.0004 --stop-step 6000 --max-cost 4.0 --spawn` |
+| Config | `configs/model_gqa_narrow.yaml` (SHA-256 `44a6340d25a35fda5f0ff5bea8bd1d4bdbca92b4b009731df8a5ef577d91c9e9`); run model-config hash `13f0061f296f1c89a224bb3de3692d370007bffdf0856cb03c5d269906dc4792` |
+| Parameters | **277,693,440** (meta-device count = formula); 25,214,976 (8.3%) fewer than SGCA/GQA |
+| Data / tokenizer | shards `fdb5f43b…`, tokenizer `28685edb…`, seed 1234, same order as M6 |
+| Schedule | 15,259 steps, warmup 763, LR 4e-4 → 4e-5 cosine; stopped at 6,000 (393,216,000 tokens) |
+| Hardware | `NVIDIA H100 80GB HBM3`, torch `2.15.0+cu132`, CUDA 13.2 |
+| Tests before launch | 39 passed |
+| Step-100 loss | 8.7873 (sanity range 8.7–9.1) |
+| Step-6,000 train loss | 2.5603 |
+| Speed | median 150,819 tokens/s, 43.8% MFU (GQA 148,951 / 45.6%; SGCA 138,778 / 42.5%) |
+| Wall time | 0.7595 h (10:30 → 11:18) |
+| Cost | $3.14 at $4.14/h (guard count $3.33 at $4.39/h; estimate $3.1) |
+| Checkpoint | `/data/runs/abl_gqa_narrow/checkpoints/step_0006000` (Volume only) |
+
+| Step | B (GQA-narrow) | SGCA | GQA | B − GQA |
+| --- | --- | --- | --- | --- |
+| 1,000 | 1.5979 | 1.4627 | 1.6024 | −0.0045 |
+| 2,000 | 1.1707 | 1.1564 | 1.1619 | +0.0088 |
+| 3,000 | 1.0598 | 1.0741 | 1.0547 | +0.0052 |
+| 4,000 | 1.0038 | 1.0285 | 1.0028 | +0.0009 |
+| 5,000 | 0.9604 | 0.9892 | 0.9571 | +0.0033 |
+| 6,000 | **0.9302** | 0.9612 | 0.9273 | +0.0029 |
+
+f = (0.930241 − 0.9273) / (0.9612 − 0.9273) = 0.0029 / 0.0339 = **0.086**. Decay-rate ratio to GQA over
+3k→6k: B 1.013, SGCA 0.863. Per-source f at step 6,000 ranges 0.01–0.14 (all six sources agree).
+Caveats: one seed per run; differences below ~0.003 BPB are jitter.

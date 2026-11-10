@@ -285,8 +285,8 @@ def m6_pair(spawn: bool = False) -> None:
 def train(model: str = "sgca", max_cost: float = 0.0, stop_step: int = 0, run_name: str = "",
           steps: int = 0, peak_lr: float = 0.0, warmup_steps: int = -1, spawn: bool = False) -> None:
     """modal run --detach deploy/modal_app.py::train --model sgca --max-cost 3 --stop-step 2000 --spawn"""
-    if model not in ("sgca", "gqa"):
-        raise SystemExit("--model must be sgca or gqa")
+    if model not in ("sgca", "gqa", "gqa_narrow"):
+        raise SystemExit("--model must be sgca, gqa or gqa_narrow")
     if max_cost <= 0:
         raise SystemExit("set --max-cost (dollars) so a run can never spend more than you allow")
     s_ov, lr_ov, w_ov = (steps or None), (peak_lr or None), (warmup_steps if warmup_steps >= 0 else None)

@@ -1,0 +1,17 @@
+# Run B (FFN-width ablation): the GQA baseline with SGCA's narrow FFN and no gate.
+# Identical to model_gqa.yaml except `name`, `ffn_hidden` and `expected_params`.
+# Against m6_sgca it isolates the sine gate; against m6_gqa it isolates the FFN cut (2560 -> 2218).
+name: gqa_narrow
+attention: gqa            # gqa | sgca
+n_layers: 24
+d_model: 1024
+n_heads: 16               # query heads
+n_kv_heads: 4
+head_dim: 64
+ffn_hidden: 2218          # SGCA's width; (2560 - 2218) x 3 x 1024 = 1,050,624 fewer params per layer
+vocab_size: 50000
+max_seq_len: 4096
+rope_theta: 10000.0
+norm_eps: 1.0e-6
+init_std: 0.02            # output projections use init_std / sqrt(2 * n_layers)
+expected_params: 277693440
