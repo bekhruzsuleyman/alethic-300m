@@ -24,8 +24,8 @@ it before building anything.
 | M2 & M3a data speed test + 1B-token subset on Modal CPU | **Done**: `1,061,655,074` tokens in 183s (`362.5k` tok/s/worker, `5.80M` tok/s total, `$0.05`), mix within ±0.36 pp of `37/17/28/8/10` (Uzbek `10.14%`), 58 decontam + 17 dedup drops |
 | M4 2,000-step GPU smoke test on Modal H100 (`m4_sgca` & `m4_gqa`) | **Done**: SGCA `139.7k` tok/s (`42.72% MFU`, val BPB `1.5269 → 1.1734`), GQA `149.0k` tok/s (`45.57% MFU`, val BPB `1.6055 → 1.1638`); checkpoints & logs backed up to HF |
 | M5 LR sweep (`100M` tok × `{2e-4, 4e-4, 8e-4}` × `{sgca, gqa}`) | **Done**: SGCA beats GQA at all 3 LRs and on all 6 sources (`1.4090 vs 1.5034` @ `2e-4`, `1.2697 vs 1.3942` @ `4e-4`, `1.2443 vs 1.3783` @ `8e-4`); `4e-4` confirmed for M6 |
-| M6 1B-token matched pair (`15,259` steps each on H100) | **In progress**: running with deliberate step-1000 stop/resume check and 500-step Volume checkpoints |
-| M3b / M7 / M8 | Wait for owner after M6 |
+| M6 1B-token matched pair (`15,259` steps each on H100) | **Done**: `m6_sgca` (`overall_bpb = 0.847203`, `loss = 2.3579`, `42.5% MFU`, HF `748494ce`) vs `m6_gqa` (`overall_bpb = 0.806841`, `loss = 2.2490`, `45.6% MFU`, HF `3c900c7e`); SGCA leads `< 144M` tok, GQA leads `> 144M` tok (`-0.0404` BPB at 1B) |
+| M3b / M7 / M8 | Wait for owner after M6 (`~$28.90 / $30.00` Modal free credits used; `0` containers running) |
 
 Update this table when a milestone's gate is passed.
 

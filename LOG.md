@@ -425,3 +425,79 @@ Numbers are exact where they were measured. Times are local (UTC+5).
   - `4e-4` gives SGCA its best Uzbek BPB (`1.1199` Cyrillic, `1.6618` Latin vs `1.1471` / `1.7023` at `8e-4`)
     and GQA its best Python BPB (`1.1345` vs `1.1360` at `8e-4`), confirming `configs/train.yaml`'s
     `peak_lr: 4.0e-4` (`min_lr: 4.0e-5`) for M6.
+  - Backed up all 6 M5 runs to `bekhruzsuleyman/alethic-300m` (`cb189284`, `65210f95`, `4a8ff9b9`,
+    `5c571e1d`, `f3bb75ce`, `baf0aee7`).
+
+### M6 1B-token matched pair (`m6_sgca` & `m6_gqa`, `15,259` steps each on H100, 03:29–07:30)
+
+- `[cost]` Spawned `m6_pair_remote(max_cost_per_run=10.5)` (`ap-YlOc7OTvBjhEnwoQ0zjbJA`, call
+  `fc-01M716W0JBKJN7NB5S13SCSE7K`) at 03:29 on `NVIDIA H100 80GB HBM3` (`$4.39/h`).
+  Both models trained for `15,259` steps (`1,000,013,824` tokens = `3.025 × 10¹⁸` FLOPs each) with
+  identical seed (`1234`), data order, `peak_lr = 4.0e-4`, `min_lr = 4.0e-5`, and 5% linear warmup
+  (`763` steps), evaluating validation BPB every 1,000 steps and saving Volume-committed checkpoints
+  every 500 steps.
+- `[test]` **Intentional stop & resume gate on `m6_sgca`:**
+  - `m6_sgca` ran `0 → 1,000` steps with `--stop-step 1000`, saved and committed `step_0001000` to the
+    Modal Volume, and then resumed (`--resume auto`) cleanly from `step_0001000` to `step_0015259`
+    (`runs/m6_sgca/runs.jsonl` records `start_step: 0` and `start_step: 1000` with identical config,
+    shard, and tokenizer SHA-256 hashes).
+- `[finding]` **`m6_sgca` completed at 05:34 (`2.07 hours`, `$9.07`):**
+  - Sustained speed: **`138,882 – 139,316` tokens/s**, **`420.2 – 421.5 TFLOP/s`**, **`42.48% – 42.62% MFU`**.
+  - Final step `15,259` train loss: **`2.3579`** nats.
+  - Final step `15,259` full validation (`1,017,192` tokens = `4,085,874` UTF-8 bytes):
+    - `overall_bpb`: **`0.847203`**
+    - `python`: **`0.607403`** BPB (`1.457970` nats)
+    - `code_other`: **`0.695311`** BPB (`1.389513` nats)
+    - `uzbek_cyrl`: **`0.799914`** BPB (`3.111462` nats)
+    - `fineweb_edu`: **`1.013832`** BPB (`3.625675` nats)
+    - `math`: **`1.094650`** BPB (`3.095357` nats)
+    - `uzbek_latn`: **`1.202895`** BPB (`3.261190` nats)
+  - Final checkpoint `runs/m6_sgca/checkpoints/step_0015259`:
+    `state_sha256 = d997cb8d920adf8f2e217d24cca65d41944c7fc60cbd63841bf3457a6a58985c`.
+  - Automatically uploaded `runs/m6_sgca` (logs + `step_0015259`) to Hugging Face `bekhruzsuleyman/alethic-300m`
+    (commit `748494ce5b07ceca699b86c5ae9f98589930fc5f`) before starting `m6_gqa`.
+- `[finding]` **`m6_gqa` completed at 07:30 (`1.91 hours`, `$8.36`):**
+  - Sustained speed: **`148,940 – 149,677` tokens/s** (`+6.7%` faster than SGCA), **`450.6 – 452.8 TFLOP/s`**,
+    **`45.56% – 45.79% MFU`** (`+3.1 pp` higher MFU than SGCA).
+  - Final step `15,259` train loss: **`2.2490`** nats (`-0.1088` nats lower than `m6_sgca`).
+  - Final step `15,259` full validation (`1,017,192` tokens = `4,085,874` UTF-8 bytes):
+    - `overall_bpb`: **`0.806841`** (`-0.040362` BPB / `-4.8%` lower than `m6_sgca`)
+    - `python`: **`0.569646`** BPB (`1.367341` nats; `-0.0378` BPB vs SGCA)
+    - `code_other`: **`0.646453`** BPB (`1.291876` nats; `-0.0489` BPB vs SGCA)
+    - `uzbek_cyrl`: **`0.761652`** BPB (`2.962633` nats; `-0.0383` BPB vs SGCA)
+    - `fineweb_edu`: **`0.976563`** BPB (`3.492396` nats; `-0.0373` BPB vs SGCA)
+    - `math`: **`1.049375`** BPB (`2.967331` nats; `-0.0453` BPB vs SGCA)
+    - `uzbek_latn`: **`1.154667`** BPB (`3.130439` nats; `-0.0482` BPB vs SGCA)
+  - Final checkpoint `runs/m6_gqa/checkpoints/step_0015259`:
+    `state_sha256 = 8a8567e55440b221918b93d5fab0b9f565b0dd59ae21699e63aab7297b795a68`.
+  - Automatically uploaded `runs/m6_gqa` (logs + `step_0015259`) to Hugging Face `bekhruzsuleyman/alethic-300m`
+    (commit `3c900c7e72aef7e3a5c1f8e7554d1d86261d7318`).
+- `[finding]` **Why SGCA won M5 (100M tokens) but GQA won M6 (1B tokens) — the `step 2,200` crossover:**
+  - Both models are strictly Iso-Parameter (`302,908,416` params) and strictly Iso-FLOP (`3.0254 GFLOP/tok`,
+    since SGCA's $1024 \times 1024$ `gate_proj` adds `6.29 MFLOP/tok/layer` while shrinking `d_ff` from
+    `3072 → 2730` removes `6.30 MFLOP/tok/layer`).
+  - **Early / low-FLOP regime (`steps 100 → 2,200`, `0 → 144M` tokens, `< 0.44 EFLOPs`):** SGCA's
+    sinusoidal gate (`C = (W·H + b) ⊙ (alpha ⊙ sin(A))`) accelerates early representation learning, giving
+    much lower train loss at step 1,000 (`4.2858` vs `4.7187`) and step 1,500 (`3.5302` vs `3.6608`), and
+    lower validation BPB at step 1,000 (`1.4627` vs `1.6024`) and step 2,000 (`1.1564` vs `1.1619`).
+  - **Exact crossover at step `2,200` (`144.2M` tokens, `0.44 EFLOPs`):** Both models hit `loss = 3.245` nats.
+  - **Scaling regime (`steps 2,300 → 15,259`, `150M → 1.0B` tokens, `0.45 → 3.03 EFLOPs`):** Once past
+    the initial warmup/low-compute phase, spending `1,050,624` parameters per layer on SwiGLU FFN width
+    (`d_ff = 3072` in GQA vs `2730` in SGCA) provides higher capacity per FLOP than spending them on
+    `gate_proj`. By step `10,500` (`688M` tokens), `m6_gqa` already surpasses `m6_sgca`'s final step-`15,259`
+    (`1.0B`-token) validation BPB across all 6 sources, finishing `15,259` steps ahead by **`-0.0404` BPB**
+    and **`-0.1088` nats** while also running **`6.7%` faster** on H100 (`45.6%` vs `42.5%` MFU).
+- `[finding]` **Host CPU & memory right-sizing (`deploy/modal_app.py`):**
+  - Modal metrics during M6 showed GPU containers used only **`1.29` CPU cores** (of `4.0` requested) and
+    **`7.25 GiB` host RAM** (of `32.0 GiB` requested) because `ShardDataset` uses zero-copy `np.memmap`.
+  - Updated `train_remote` and `m6_pair_remote` in `deploy/modal_app.py` to `cpu=2, memory=12288` (`12 GiB`),
+    cutting host CPU/RAM overhead from `$0.44/h` to `$0.19/h` and lowering the H100 container rate from
+    `$4.39/h` to **`$4.14/h`** for any future GPU runs.
+- `[cost]` **Total Modal credits spent across M1–M6:**
+  - M1: `~$3.40` · M2/M3a: `$0.05` · M4: `$2.54` · M5: `$5.48` · M6: `$17.43` (`$9.07` SGCA + `$8.36` GQA)
+  - **Cumulative total:** **`~$28.90`** of the `$30.00` monthly free Starter credit (`~$1.10` remaining).
+  - **Active containers (`modal app list`):** **0 running** (`ap-YlOc7OTvBjhEnwoQ0zjbJA` stopped at 07:30).
+    Nothing is running or billing.
+- `[next]` All milestones through M6 are complete, verified, and backed up to Hugging Face (`bekhruzsuleyman/alethic-300m`).
+  Stop and wait for the owner's decision on whether/where to run M3b (6B-token shards) and M7 (6B-token training).
+

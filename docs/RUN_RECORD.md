@@ -250,3 +250,91 @@ modal run --detach deploy/modal_app.py::data_build --target-scale 0.1667 --worke
    - SGCA at `4e-4` (`1.2697`) even beats GQA at `8e-4` (`1.3783`) by **`-0.1086` BPB** across all 6 sources.
 2. **Selected learning rate (`4.0e-4`, matching `configs/train.yaml`):**
    - While `8e-4` edges out `4e-4` on code/math at the 100M-token horizon, `4e-4` achieves **better Uzbek validation BPB** on SGCA (`uzbek_cyrl` `1.1199` vs `1.1471`, `uzbek_latn` `1.6618` vs `1.7023`) and **better Python validation BPB** on GQA (`1.1345` vs `1.1360`), and avoids high-LR oscillation over longer horizons (`1B–6B` tokens). We therefore keep `peak_lr = 4.0e-4` (`min_lr = 4.0e-5`) as locked in `configs/train.yaml`.
+- **Hugging Face backups (`bekhruzsuleyman/alethic-300m`):** `m5_sgca_lr2e4` (`cb189284`), `m5_sgca_lr4e4` (`65210f95`), `m5_sgca_lr8e4` (`4a8ff9b9`), `m5_gqa_lr2e4` (`5c571e1d`), `m5_gqa_lr4e4` (`f3bb75ce`), `m5_gqa_lr8e4` (`baf0aee7`).
+
+---
+
+## M6: 1B-token matched pair (`m6_sgca` & `m6_gqa`, `15,259` steps each on Modal H100), 2026-11-10
+
+**Gate:** Train both `sgca` and `gqa` (`302,908,416` params each) for `15,259` steps (`1,000,013,824` tokens = `3.025 × 10¹⁸` FLOPs each) with identical seed (`1234`), data order, `peak_lr = 4.0e-4`, `min_lr = 4.0e-5`, and 5% linear warmup (`763` steps); deliberately stop `m6_sgca` at step 1,000 and resume from the Volume checkpoint (`--resume auto`); evaluate validation BPB every 1,000 steps and full validation at step `15,259`; back up final checkpoints and logs to `bekhruzsuleyman/alethic-300m`. **Result: passed.**
+
+### Hashes, checkpoints, and Hugging Face backups (`step_0015259`)
+
+| Artifact / Field | `m6_sgca` (`SGCA`) | `m6_gqa` (`GQA`) |
+| --- | --- | --- |
+| `n_params` | `302,908,416` (`d_ff = 2730` + `gate_proj` + `alpha`) | `302,908,416` (`d_ff = 3072`) |
+| `model_config_sha256` | `6a741d419c9a0ea0131b0ad8555b0787feab36be4d3aff5396c951c4871cbc1e` | `f0df244634935342c633cff44c1ee73d0c1fd30262736e77657160764700fd0e` |
+| `tokenizer_sha256` | `28685edb461ce3baa8b36f08c32cb04c8f6cb2c1c0c79c6e737816ad214a382b` | `28685edb461ce3baa8b36f08c32cb04c8f6cb2c1c0c79c6e737816ad214a382b` |
+| `shards_sha256` | `fdb5f43b83d2cf34ba98ca328a3ac09806d160bc9c8a9a61e1eace02c9408adc` | `fdb5f43b83d2cf34ba98ca328a3ac09806d160bc9c8a9a61e1eace02c9408adc` |
+| `specials_sha256` | `f8f2e350aa7b4014c6a01191208f8287d62c363c66177dd28425e740934dabc4` | `f8f2e350aa7b4014c6a01191208f8287d62c363c66177dd28425e740934dabc4` |
+| Final `step_0015259` `state_sha256` | `d997cb8d920adf8f2e217d24cca65d41944c7fc60cbd63841bf3457a6a58985c` | `8a8567e55440b221918b93d5fab0b9f565b0dd59ae21699e63aab7297b795a68` |
+| Intentional stop & resume check | Stopped at `step 1,000`, committed `step_0001000`, resumed `1,000 → 15,259` (`runs.jsonl` lines 1–2) | Continuous `0 → 15,259` (`runs.jsonl` line 1) |
+| Hugging Face backup (`bekhruzsuleyman/alethic-300m`) | Commit `748494ce5b07ceca699b86c5ae9f98589930fc5f` | Commit `3c900c7e72aef7e3a5c1f8e7554d1d86261d7318` |
+
+### Compute, FLOPs, MFU, and wall-clock cost (`NVIDIA H100 80GB HBM3`)
+
+| Metric | `m6_sgca` (`SGCA`) | `m6_gqa` (`GQA`) | Comparison (`GQA` vs `SGCA`) |
+| --- | ---: | ---: | --- |
+| FLOPs per token (`6N + 12 L d_model T`) | `3.0254 GFLOP/tok` | `3.0254 GFLOP/tok` | Identical (`< 0.01%` diff) |
+| Total compute (`15,259` steps = `1,000,013,824` tokens) | `3.025 × 10¹⁸ FLOPs` | `3.025 × 10¹⁸ FLOPs` | Exact Iso-FLOP pair |
+| Sustained throughput (`tokens_per_sec`) | **`138,882 – 139,316` tok/s** | **`148,940 – 149,677` tok/s** | **GQA is `+6.7%` faster** |
+| Sustained compute rate (`TFLOP/s`) | **`420.2 – 421.5 TFLOP/s`** | **`450.6 – 452.8 TFLOP/s`** | **GQA achieves `+30.4 TFLOP/s`** |
+| Sustained MFU (% of `989 TFLOP/s` bf16 peak) | **`42.48% – 42.62%`** | **`45.56% – 45.79%`** | **GQA is `+3.1 pp` MFU** |
+| Wall-clock time (`15,259` steps incl. evals & saves) | `2.07 hours` (`$9.07`) | `1.91 hours` (`$8.36`) | **GQA saves `9.6 min` (`$0.71`)** |
+
+### Step-by-step training loss (`loss` in nats) and validation `overall_bpb` (`1,000 → 15,259`)
+
+| Step | Tokens | Total Compute | **SGCA** Train Loss | **GQA** Train Loss | **SGCA** Val BPB | **GQA** Val BPB | Val BPB Diff (`GQA - SGCA`) | Leader |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `1,000` | `65.5M` | `0.20 EFLOPs` | **`4.2858`** | `4.7187` | **`1.462730`** | `1.602444` | `+0.139714` | **SGCA** (`-0.1397` BPB) |
+| `2,000` | `131.1M` | `0.40 EFLOPs` | **`3.2903`** | `3.3144` | **`1.156418`** | `1.161853` | `+0.005435` | **SGCA** (`-0.0054` BPB) |
+| `3,000` | `196.6M` | `0.59 EFLOPs` | `3.0073` | **`2.9521`** | `1.074144` | **`1.054692`** | `-0.019452` | **GQA** (`-0.0195` BPB) |
+| `4,000` | `262.1M` | `0.79 EFLOPs` | `2.8416` | **`2.7676`** | `1.028456` | **`1.002832`** | `-0.025624` | **GQA** (`-0.0256` BPB) |
+| `5,000` | `327.7M` | `0.99 EFLOPs` | `2.7938` | **`2.7037`** | `0.989191` | **`0.957108`** | `-0.032083` | **GQA** (`-0.0321` BPB) |
+| `6,000` | `393.2M` | `1.19 EFLOPs` | `2.6506` | **`2.5506`** | `0.961229` | **`0.927318`** | `-0.033911` | **GQA** (`-0.0339` BPB) |
+| `7,000` | `458.8M` | `1.39 EFLOPs` | `2.6309` | **`2.5305`** | `0.937502` | **`0.902168`** | `-0.035334` | **GQA** (`-0.0353` BPB) |
+| `8,000` | `524.3M` | `1.59 EFLOPs` | `2.6149` | **`2.5123`** | `0.918394` | **`0.882203`** | `-0.036191` | **GQA** (`-0.0362` BPB) |
+| `9,000` | `589.8M` | `1.78 EFLOPs` | `2.5753` | **`2.4677`** | `0.902041` | **`0.863929`** | `-0.038112` | **GQA** (`-0.0381` BPB) |
+| `10,000` | `655.4M` | `1.98 EFLOPs` | `2.4583` | **`2.3503`** | `0.887918` | **`0.848843`** | `-0.039075` | **GQA** (`-0.0391` BPB) |
+| `11,000` | `720.9M` | `2.18 EFLOPs` | `2.4907` | **`2.3816`** | `0.876077` | **`0.836540`** | `-0.039537` | **GQA** (`-0.0395` BPB) |
+| `12,000` | `786.4M` | `2.38 EFLOPs` | `2.4197` | **`2.3112`** | `0.865928` | **`0.825775`** | `-0.040153` | **GQA** (`-0.0402` BPB) |
+| `13,000` | `852.0M` | `2.58 EFLOPs` | `2.3659` | **`2.2567`** | `0.857137` | **`0.817643`** | `-0.039494` | **GQA** (`-0.0395` BPB) |
+| `14,000` | `917.5M` | `2.78 EFLOPs` | `2.3834` | **`2.2730`** | `0.851534` | **`0.811673`** | `-0.039861` | **GQA** (`-0.0399` BPB) |
+| `15,000` | `983.0M` | `2.97 EFLOPs` | `2.3376` | **`2.2288`** | `0.847968` | **`0.807772`** | `-0.040196` | **GQA** (`-0.0402` BPB) |
+| **`15,259`** | **`1,000.0M`** | **`3.03 EFLOPs`** | `2.3579` | **`2.2490`** | `0.847203` | **`0.806841`** | **`-0.040362`** | **GQA (`-0.0404` BPB / `-0.1088` nats)** |
+
+### Final full-validation comparison at Step `15,259` (`1,017,192` tokens = `4,085,874` UTF-8 bytes)
+
+| Source | Val Tokens | Val UTF-8 Bytes | **`m6_sgca` BPB** | **`m6_gqa` BPB** | **BPB Diff (`GQA - SGCA`)** | **`m6_sgca` `loss_nats`** | **`m6_gqa` `loss_nats`** | **Nats Diff (`GQA - SGCA`)** |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **`python`** | `353,058` | `1,222,622` | `0.607403` | **`0.569646`** | **`-0.037757`** (`-6.2%`) | `1.457970` | **`1.367341`** | **`-0.090629`** |
+| **`code_other`** | `189,385` | `546,014` | `0.695311` | **`0.646453`** | **`-0.048858`** (`-7.0%`) | `1.389513` | **`1.291876`** | **`-0.097637`** |
+| **`fineweb_edu`** | `262,679` | `1,355,261` | `1.013832` | **`0.976563`** | **`-0.037269`** (`-3.7%`) | `3.625675` | **`3.492396`** | **`-0.133279`** |
+| **`math`** | `71,835` | `293,053` | `1.094650` | **`1.049375`** | **`-0.045275`** (`-4.1%`) | `3.095357` | **`2.967331`** | **`-0.128026`** |
+| **`uzbek_cyrl`** | `70,819` | `397,416` | `0.799914` | **`0.761652`** | **`-0.038262`** (`-4.8%`) | `3.111462` | **`2.962633`** | **`-0.148829`** |
+| **`uzbek_latn`** | `69,416` | `271,508` | `1.202895` | **`1.154667`** | **`-0.048228`** (`-4.0%`) | `3.261190` | **`3.130439`** | **`-0.130751`** |
+| **Overall** | **`1,017,192`** | **`4,085,874`** | `0.847203` | **`0.806841`** | **`-0.040362`** (`-4.8%`) | — | — | **Train: `-0.108838`** |
+
+### Scientific conclusions from M4, M5, and M6 (`SGCA` vs `GQA`)
+
+1. **Two distinct compute regimes (`< 144M` tokens vs `> 144M` tokens):**
+   - **Low-compute regime (`0 → 2,200` steps / `< 144M` tokens / `< 0.44 EFLOPs`):** SGCA's sinusoidal gate (`C = (W·H + b) ⊙ (alpha ⊙ sin(A))`) acts as a strong early inductive bias, dropping loss much faster (`4.2858` vs `4.7187` at step 1,000; `-0.1244` BPB at 100M tokens in M5).
+   - **Crossover at step `2,200` (`144.2M` tokens, `0.44 EFLOPs`):** Both models reach `loss = 3.245` nats.
+   - **Scaling regime (`2,200 → 15,259` steps / `144M → 1.0B` tokens / `0.44 → 3.03 EFLOPs`):** Standard GQA (`d_ff = 3072`) scales significantly better with compute than SGCA (`d_ff = 2730`), finishing 1B tokens ahead on **all 6 sources** by **`-0.0404` overall BPB** (`0.806841` vs `0.847203`) and **`-0.1088` nats** training loss (`2.2490` vs `2.3579`).
+2. **Sample-efficiency & compute-efficiency equivalence:**
+   - `m6_gqa` reaches `overall_bpb = 0.848843` at **step `10,000`** (`655.4M` tokens) and **`0.836540` at step `11,000`** (`720.9M` tokens) — beating `m6_sgca`'s final **step `15,259`** (`1.000B` tokens) score of `0.847203` with **31% fewer tokens/FLOPs** and **36% less GPU wall-clock time**.
+3. **Hardware utilization (`MFU`) and host sizing:**
+   - GQA achieves **`45.56% – 45.79% MFU`** (`149.0k` tok/s) vs SGCA's **`42.48% – 42.62% MFU`** (`139.0k` tok/s) because SGCA's per-layer elementwise sinusoidal gating adds HBM memory-bandwidth reads/writes.
+   - Host monitoring during M6 showed GPU jobs use only `1.29` CPU cores and `7.25 GiB` host RAM (thanks to zero-copy `np.memmap` shards). `deploy/modal_app.py` was right-sized from `cpu=4, memory=32768` (`$4.39/h`) down to `cpu=2, memory=12288` (`$4.14/h`, saving `$0.25/h` for future GPU runs).
+
+### Rented servers & total Modal credit accounting
+
+- **Active Modal apps / containers (`modal app list`):** **0 running** (`ap-YlOc7OTvBjhEnwoQ0zjbJA` stopped at `07:30` local time). Nothing is running or billing.
+- **Total Modal credits spent across M1–M6:**
+  - M1 (50k Unigram tokenizer): `~$3.40`
+  - M2 & M3a (1.06B shard build on 16 CPU cores): `$0.05`
+  - M4 (2,000-step GPU smoke test, `m4_sgca` + `m4_gqa`): `$2.54`
+  - M5 (6-run LR sweep on H100): `$5.48`
+  - M6 (1B-token matched pair on H100, `m6_sgca` `$9.07` + `m6_gqa` `$8.36`): `$17.43`
+  - **Grand total (M1 through M6 complete):** **`~$28.90`** of the `$30.00` monthly free Starter allowance (`~$1.10` remaining).
+

@@ -105,7 +105,7 @@ def probe_read() -> dict:
     return out
 
 
-@app.function(image=image, gpu="H100", cpu=4, memory=32768, timeout=24 * 3600, volumes={DATA: volume},
+@app.function(image=image, gpu="H100", cpu=2, memory=12288, timeout=24 * 3600, volumes={DATA: volume},
               retries=modal.Retries(max_retries=2, initial_delay=30.0, backoff_coefficient=1.0))
 def train_remote(model: str, max_cost: float | None, stop_step: int | None, run_name: str | None,
                  steps: int | None = None, peak_lr: float | None = None, warmup_steps: int | None = None) -> int:
@@ -128,7 +128,7 @@ def train_remote(model: str, max_cost: float | None, stop_step: int | None, run_
         volume.commit()
 
 
-@app.function(image=image, gpu="H100", cpu=4, memory=32768, timeout=8 * 3600, volumes={DATA: volume},
+@app.function(image=image, gpu="H100", cpu=2, memory=12288, timeout=8 * 3600, volumes={DATA: volume},
               secrets=[hf_secret], retries=modal.Retries(max_retries=2, initial_delay=30.0, backoff_coefficient=1.0))
 def m6_pair_remote(max_cost_per_run: float = 10.5) -> dict:
     """M6: 1B tokens (15,259 steps, warmup 763, LR 4e-4) matched pair (sgca then gqa) with intentional
