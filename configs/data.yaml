@@ -1,0 +1,84 @@
+# Data sources and build settings. Paths are relative to $ALETHIC_DATA_DIR.
+# Revisions were resolved on 2026-11-09 with huggingface_hub and are pinned here; a null revision
+# stops every data command. `paths` are folders inside each dataset repo (checked on 2026-11-09).
+seed: 1234
+total_tokens: 6285714286   # 6.0B plan + 0.2857B for html and css (owner, 2026-11-10)
+target_scale: 1.0          # 0.1667 for the M3a subset (a prefix of the full build)
+overfetch: 1.15            # stop downloading a source at 1.15 x its token target (estimated bytes)
+shard_tokens: 67108864     # 128 MiB of uint16 per shard, cut at document boundaries
+unit_max_tokens: 50000000  # one work unit = one file row range of at most ~50M tokens
+val_fraction: 0.001        # share of groups sent to validation by is_validation()
+eos_id: 2
+
+sources:
+  python:
+    repo: bigcode/starcoderdata          # gated: the owner must accept its terms on Hugging Face
+    revision: 9fc30b578cedaec69e47302df72cf00feed7c8c4
+    paths: [python]                      # 59 files, 23.16 GB parquet
+    tokens: 2200000000
+    bytes_per_token: 3.5                 # estimate until M2 measures it
+    text_column: content                 # verified 2026-11-09 (python file 0: 218,079 rows)
+    key_column: max_stars_repo_name      # repo name
+  code_other:
+    repo: bigcode/starcoderdata
+    revision: 9fc30b578cedaec69e47302df72cf00feed7c8c4
+    # All nine exist (parquet GB): shell 1.52, javascript 24.91, typescript 10.50, c 19.10,
+    # cpp 16.42, rust 2.88, go 8.09, html 10.09, css 3.70. About 0.143B tokens each (equal share per
+    # language, see _stream_targets in encode.py). Owner approves before any download.
+    paths: [shell, javascript, typescript, c, cpp, rust, go, html, css]
+    approved: true        # owner approved the seven languages on 2026-11-09, html and css on 2026-11-10
+    # 9 x 142,857,143 = 1,285,714,287: the first seven keep their old 1.0B / 7 share, html and css are
+    # added on top (owner, 2026-11-10: "don't shrink others"). Total plan: 6.2857B tokens.
+    tokens: 1285714286
+    bytes_per_token: 3.5
+    text_column: content
+    key_column: max_stars_repo_name
+  fineweb_edu:
+    repo: HuggingFaceFW/fineweb-edu
+    revision: 87f09149ef4734204d70ed1d046ddc9ca3f2b8f9
+    paths: [data/CC-MAIN-2025-05, data/CC-MAIN-2025-08, data/CC-MAIN-2025-13,
+            data/CC-MAIN-2025-18, data/CC-MAIN-2025-21, data/CC-MAIN-2025-26]   # 50 files each
+    tokens: 1700000000
+    bytes_per_token: 4.0
+    text_column: text
+    key_column: id
+  math:
+    repo: open-web-math/open-web-math
+    revision: fde8ef8de2300f5e778f56261843dab89f230815
+    paths: [data]                        # 114 files, 27.43 GB
+    tokens: 500000000
+    bytes_per_token: 4.0
+    text_column: text
+    key_column: url
+  uzbek_latn:
+    repo: HuggingFaceFW/fineweb-2
+    revision: af9c13333eb981300149d5ca60a8e9d659b276b9
+    paths: [data/uzn_Latn/train]         # 1 file, 2.04 GB, 1,233,463 rows
+    tokens: 400000000
+    bytes_per_token: 2.6
+    text_column: text
+    key_column: url
+    license: ODC-By                      # attribution goes into manifest.json
+  uzbek_cyrl:
+    repo: HuggingFaceFW/fineweb-2
+    revision: af9c13333eb981300149d5ca60a8e9d659b276b9
+    paths: [data/uzn_Cyrl/train]         # 1 file, 1.97 GB, 1,357,811 rows
+    tokens: 200000000
+    bytes_per_token: 4.0
+    text_column: text
+    key_column: url
+    license: ODC-By
+
+decontam:
+  ngram: 13
+  benchmarks:
+    humaneval: {repo: openai/openai_humaneval, revision: 7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544,
+                paths: [openai_humaneval], columns: [prompt, canonical_solution]}
+    mbpp: {repo: google-research-datasets/mbpp, revision: 4bb6404fdc6cacfda99d4ac4205087b89d32030c,
+           paths: [full], columns: [text, code]}
+
+paths:
+  raw: raw
+  hashes: hashes
+  shards: shards
+  tokenizer: tokenizer/alethic-tokenizer-v1

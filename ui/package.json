@@ -1,0 +1,10 @@
+{
+  "name": "alethic-agent-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Ink (React) screen for alethic-agent. It runs the Python agent with --json and draws what it sends.",
+  "scripts": { "test": "node --test --test-force-exit test/*.test.js" },
+  "dependencies": { "ink": "^6.0.0", "react": "^19.0.0" },
+  "devDependencies": { "ink-testing-library": "^4.0.0" }
+}
